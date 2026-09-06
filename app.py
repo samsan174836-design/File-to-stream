@@ -370,6 +370,8 @@ async def get_file_details_api(request: Request, unique_id: str):
         "file_name": mask_filename(file_name),
         "file_size": get_readable_file_size(media.file_size),
         "is_media": mime_type.startswith(("video", "audio")),
+        "mime_type": mime_type,
+        "bot_username": Config.BOT_USERNAME,
         "direct_dl_link": f"{Config.BASE_URL}/dl/{message_id}/{safe_file_name}",
         "mx_player_link": f"intent:{Config.BASE_URL}/dl/{message_id}/{safe_file_name}#Intent;action=android.intent.action.VIEW;type={mime_type};end",
         "vlc_player_link": f"intent:{Config.BASE_URL}/dl/{message_id}/{safe_file_name}#Intent;action=android.intent.action.VIEW;type={mime_type};package=org.videolan.vlc;end"
