@@ -1,0 +1,60 @@
+{
+  "name": "telegram-file-sharing-bot",
+  "description": "Telegram file-sharing bot with a FastAPI streaming web server",
+  "keywords": [
+    "telegram",
+    "pyrogram",
+    "fastapi"
+  ],
+  "env": {
+    "API_ID": {
+      "description": "Telegram API ID from my.telegram.org",
+      "required": true
+    },
+    "API_HASH": {
+      "description": "Telegram API hash from my.telegram.org",
+      "required": true
+    },
+    "BOT_TOKEN": {
+      "description": "Bot token from BotFather",
+      "required": true
+    },
+    "OWNER_ID": {
+      "description": "Telegram numeric user ID of the bot owner",
+      "required": true
+    },
+    "STORAGE_CHANNEL": {
+      "description": "Telegram storage channel ID or @username where the bot is an admin",
+      "required": true
+    },
+    "DATABASE_URL": {
+      "description": "MongoDB connection string",
+      "required": true
+    },
+    "BASE_URL": {
+      "description": "Public HTTPS URL of the Heroku app, without a trailing slash",
+      "required": true
+    },
+    "FORCE_SUB_CHANNEL": {
+      "description": "Optional Telegram channel ID or @username required before downloading",
+      "required": false
+    },
+    "MULTI_TOKEN_1": {
+      "description": "Optional additional Telegram bot token for multi-client downloads",
+      "required": false
+    },
+    "REDIRECT_BLOGGER_URL": {
+      "description": "Optional redirect URL",
+      "required": false
+    },
+    "BLOGGER_PAGE_URL": {
+      "description": "Optional Blogger page URL",
+      "required": false
+    }
+  },
+  "formation": {
+    "web": {
+      "quantity": 1
+    }
+  }
+}
