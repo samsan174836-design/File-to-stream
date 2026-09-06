@@ -7,6 +7,7 @@ import traceback
 import uvicorn
 import re
 import logging
+from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 
 from pyrogram import Client, filters, enums
@@ -39,6 +40,10 @@ async def lifespan(app: FastAPI):
     
     await db.connect()
     
+    global bot_ready, startup_error
+    bot_ready = False
+    startup_error = None
+
     try:
         print("Starting main Pyrogram bot...")
         await bot.start()
@@ -70,15 +75,31 @@ async def lifespan(app: FastAPI):
             print(f"Warning: Channel cleanup fail ho gaya. Error: {e}")
 
         print("--- Lifespan: Startup safaltapoorvak poora hua. ---")
-    
+        bot_ready = True
+    except FloodWait as e:
+        retry_at = datetime.now(timezone.utc) + timedelta(seconds=e.value)
+        startup_error = (
+            f"Telegram rate limit active. Do not restart the dyno until "
+            f"{retry_at.isoformat()} (wait {e.value} seconds)."
+        )
+        multi_clients.clear()
+        work_loads.clear()
+        print(f"!!! BOT STARTUP BLOCKED: {startup_error}")
     except Exception as e:
-        print(f"!!! FATAL ERROR: Bot startup ke dauraan error aa gaya: {traceback.format_exc()}")
+        startup_error = "Bot startup failed. Check the Heroku logs for the Telegram error."
+        multi_clients.clear()
+        work_loads.clear()
+        print(f"!!! BOT STARTUP FAILED: {traceback.format_exc()}")
     
     yield
     
     print("--- Lifespan: Server band ho raha hai... ---")
     if bot.is_initialized:
-        await bot.stop()
+        try:
+            await bot.stop()
+        except Exception as e:
+            print(f"Warning: Bot shutdown failed: {e}")
+    await db.disconnect()
     print("--- Lifespan: Shutdown poora hua. ---")
 
 app = FastAPI(lifespan=lifespan)
@@ -103,6 +124,8 @@ logging.getLogger("uvicorn.access").addFilter(HideDLFilter())
 
 bot = Client("SimpleStreamBot", api_id=Config.API_ID, api_hash=Config.API_HASH, bot_token=Config.BOT_TOKEN, in_memory=True)
 multi_clients = {}; work_loads = {}; class_cache = {}
+bot_ready = False
+startup_error = None
 
 # =====================================================================================
 # --- MULTI-CLIENT LOGIC ---
@@ -275,10 +298,23 @@ async def health_check():
     """
     This route provides a 200 OK response for uptime monitors.
     """
+    if not bot_ready:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "starting",
+                "message": startup_error or "Bot is not ready yet.",
+            },
+        )
     return {"status": "ok", "message": "Server is healthy and running!"}
 
 @app.get("/show/{unique_id}", response_class=HTMLResponse)
 async def show_page(request: Request, unique_id: str):
+    if not bot_ready:
+        raise HTTPException(
+            status_code=503,
+            detail=startup_error or "Bot is not ready yet. Please try again shortly.",
+        )
     return templates.TemplateResponse(
         request=request,
         name="show.html",
