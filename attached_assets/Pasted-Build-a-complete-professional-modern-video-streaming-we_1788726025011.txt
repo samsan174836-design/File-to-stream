@@ -1,0 +1,560 @@
+Build a complete, professional, modern video streaming website from scratch.
+
+IMPORTANT CONTEXT:
+This website is designed to stream video files coming from Telegram. I already have a working video player for playing individual videos. DO NOT rebuild or replace the existing video player functionality. Build the complete website UI/UX and application structure around the existing player.
+
+The platform will be used for BOTH:
+
+1. Educational/study lectures
+2. Movies and general entertainment videos
+
+The design should therefore NOT look too much like a school/education portal or a movie-only streaming service. It should feel like a professional general-purpose video streaming platform.
+
+DESIGN INSPIRATION:
+Take inspiration from the usability and familiarity of YouTube, but DO NOT copy YouTube's exact design, branding, layout, or colors.
+
+The website should have its own professional identity.
+
+==================================================
+
+1. DESIGN SYSTEM
+   ==================================================
+
+Primary color:
+
+- Professional green
+- Use green mainly for important actions, active navigation, progress bars, buttons, and highlights.
+- Avoid an overly bright/neon green.
+
+Supporting colors:
+
+- White
+- Very light grey backgrounds
+- Dark charcoal/black text
+- Soft grey borders
+
+Overall appearance:
+
+- Clean
+- Professional
+- Modern
+- Minimal
+- Premium
+- Easy to understand
+- Comfortable for long study sessions
+- Also attractive enough for movies/entertainment
+
+Use:
+
+- Rounded corners
+- Soft shadows
+- Clean spacing
+- Good typography hierarchy
+- High-quality thumbnail presentation
+- Consistent spacing throughout the application
+
+Do not make the interface unnecessarily flashy.
+
+==================================================
+2. RESPONSIVE DESIGN
+
+The website MUST be fully responsive.
+
+Optimize separately for:
+
+- Desktop
+- Laptop
+- Tablet
+- Mobile
+
+Desktop:
+
+- Sidebar/navigation should be comfortable to use.
+- Content area should make good use of available screen width.
+
+Mobile:
+
+- Use a compact header.
+- Navigation should become a bottom navigation bar or another mobile-friendly navigation pattern.
+- Video cards should adapt to smaller screens.
+- Search should remain easily accessible.
+- Touch targets must be large enough.
+
+Tablet:
+
+- Use an adaptive grid between mobile and desktop.
+
+Never allow horizontal scrolling on normal pages.
+
+==================================================
+3. MAIN NAVIGATION
+
+Create the following main navigation:
+
+HOME
+COMPLETED
+CONTINUE
+LATER LECTURE
+TODAY LECTURE
+SEARCH
+
+Use clean icons with labels.
+
+Desktop:
+Use a left sidebar or compact navigation system.
+
+Mobile:
+Use a bottom navigation bar for the most important sections.
+
+Clearly indicate the currently active section using the primary green color.
+
+==================================================
+4. HOME PAGE
+
+Create a professional streaming homepage.
+
+Suggested order:
+
+1. Welcome / featured section
+2. Continue Watching
+3. Today's Lectures
+4. Recently Watched
+5. Watch Later
+6. Latest Videos
+7. Categories / Collections
+
+Do not show empty sections.
+
+If a section has no videos, automatically hide that section.
+
+The homepage should feel dynamic and useful rather than like a static dashboard.
+
+==================================================
+5. CONTINUE WATCHING
+
+This is one of the MOST IMPORTANT features.
+
+When a user starts watching a video and leaves before finishing it:
+
+- Save the current playback position.
+- Store the video identifier.
+- Store progress percentage.
+- Store last watched time.
+- Show the video inside "Continue Watching".
+
+Example card:
+
+Thumbnail
+Video title
+Progress bar
+"32% watched"
+Resume button
+
+Clicking the card should open the video and resume playback from the saved position.
+
+If the user finishes a video, remove it from Continue Watching and move it to Completed.
+
+The progress should update automatically while watching.
+
+Use browser local storage or an appropriate client-side persistence mechanism because THERE IS NO LOGIN SYSTEM.
+
+==================================================
+6. COMPLETED LIST
+
+Create a dedicated Completed page.
+
+When a user reaches the end of a video:
+
+- Mark it as completed.
+- Store completion state locally.
+- Display it in Completed.
+
+Each completed video should show:
+
+- Thumbnail
+- Title
+- Completion status
+- Date/time if useful
+
+Allow the user to open the video again.
+
+Consider adding a "Clear completed" or remove option.
+
+==================================================
+7. LATER LECTURE / WATCH LATER
+
+Even though the navigation item is called "Later Lecture", this feature should work for ALL videos.
+
+Users should be able to save any video for later.
+
+Each video card should have a simple:
+"Save for Later" / bookmark action.
+
+The Later Lecture page should display saved videos.
+
+Users should be able to remove videos from this list.
+
+Persist this data using local storage because there is no login.
+
+==================================================
+8. TODAY LECTURE
+
+Create a dedicated "Today Lecture" section.
+
+This section should display videos assigned to today's lecture/content list.
+
+Design the UI so that it can support educational content naturally.
+
+Use:
+
+- Date information
+- Lecture number if available
+- Duration
+- Subject/category if available
+
+But do not make the whole website look educational-only because movies will also be used.
+
+==================================================
+9. VIDEO CARDS
+
+Create a reusable professional video card component.
+
+Each card can contain:
+
+- Thumbnail
+- Video title
+- Duration
+- Category/collection if available
+- Progress bar if partially watched
+- Completed indicator if completed
+- Watch Later/bookmark button
+- Optional metadata
+
+Hover behavior on desktop:
+
+- Slight scale-up
+- Soft shadow
+- Show useful actions
+- Smooth transition
+
+Do NOT create excessive animations.
+
+On mobile:
+
+- Remove hover-dependent functionality.
+- Keep important actions directly accessible.
+
+==================================================
+10. VIDEO GRID
+
+Use a responsive grid.
+
+Desktop:
+3–5 cards depending on screen width.
+
+Tablet:
+2–3 cards.
+
+Mobile:
+1–2 cards depending on available width.
+
+Use CSS Grid where appropriate.
+
+Maintain consistent thumbnail aspect ratio.
+
+==================================================
+11. SEARCH
+
+Create a simple and fast search system.
+
+Search bar should be easily accessible from the main header.
+
+Search should search through:
+
+- Video title
+- Category
+- Subject
+- Other available metadata
+
+Show search results in the same reusable video card design.
+
+Include:
+
+- Search icon
+- Clear button
+- Empty-state message when no results are found
+
+Keep the search interface SIMPLE. Do not build an unnecessarily complicated advanced search system.
+
+==================================================
+12. VIDEO WATCH PAGE
+
+Use the EXISTING VIDEO PLAYER.
+
+Do not replace or rewrite the existing player unless absolutely necessary.
+
+Build a professional page around it.
+
+Suggested layout:
+
+Video Player
+↓
+Title
+↓
+Video information
+↓
+Progress/status
+↓
+Save for Later
+↓
+Related / Next Videos
+
+The page should feel like a professional streaming/watch page.
+
+The existing player must remain fully functional.
+
+Integrate Continue Watching functionality with the existing player's playback position if technically possible.
+
+==================================================
+13. DATA/PERSISTENCE
+
+There is NO LOGIN.
+
+Therefore implement client-side persistence using localStorage or another reliable browser-side mechanism.
+
+Store:
+
+- Continue Watching
+- Playback position
+- Completion status
+- Watch history
+- Watch Later
+- Last watched timestamp
+
+Create a clean data structure so it can later be replaced with a backend/database if needed.
+
+Do not hard-code the UI around localStorage in a way that makes future backend integration difficult.
+
+Create reusable services/utilities for video state management.
+
+==================================================
+14. WATCH HISTORY / RECENTLY WATCHED
+
+Maintain a Recently Watched section.
+
+Whenever the user watches a video:
+
+- Update its last watched time.
+- Put it near the beginning of Recently Watched.
+
+Avoid duplicate entries.
+
+The same video should update its existing history entry instead of creating unlimited duplicates.
+
+==================================================
+15. ANIMATIONS
+
+Use PREMIUM but SUBTLE animations.
+
+Examples:
+
+- Smooth page transitions
+- Card hover animation
+- Button hover
+- Sidebar transitions
+- Search opening animation
+- Progress bar animation
+- Skeleton loading animation
+- Modal transitions if required
+
+Animation duration should generally feel fast and smooth.
+
+Avoid:
+
+- Excessive bouncing
+- Flashing
+- Huge movement
+- Distracting animations
+
+The website should feel polished, not like a gaming website.
+
+==================================================
+16. LOADING STATES
+
+Create beautiful skeleton loaders for:
+
+- Video cards
+- Homepage sections
+- Search results
+
+Do not show a completely blank screen while content is loading.
+
+==================================================
+17. EMPTY STATES
+
+Create attractive empty states.
+
+Examples:
+
+Continue Watching:
+"You haven't started any videos yet."
+
+Completed:
+"No completed videos yet."
+
+Later Lecture:
+"Videos saved for later will appear here."
+
+Search:
+"No videos found."
+
+Keep the messages friendly and simple.
+
+==================================================
+18. ERROR HANDLING
+
+Create clean error states.
+
+If a thumbnail fails:
+
+- Show a professional fallback thumbnail.
+
+If video metadata is missing:
+
+- Do not break the card.
+
+If localStorage contains invalid data:
+
+- Handle it safely instead of crashing the application.
+
+The website should remain usable even when some video information is missing.
+
+==================================================
+19. ACCESSIBILITY
+
+Follow good accessibility practices.
+
+Use:
+
+- Semantic HTML
+- Proper button elements
+- Accessible labels
+- Keyboard navigation
+- Visible focus states
+- Good color contrast
+
+All major actions should be usable with a keyboard.
+
+==================================================
+20. CODE QUALITY
+
+Build the application using reusable components.
+
+Suggested components:
+
+- Header
+- Sidebar
+- MobileBottomNavigation
+- SearchBar
+- VideoCard
+- VideoGrid
+- ContinueWatching
+- CompletedSection
+- WatchLaterSection
+- TodayLectureSection
+- RecentlyWatched
+- EmptyState
+- SkeletonCard
+- ProgressBar
+- VideoWatchPage
+
+Create reusable hooks/services for:
+
+- Watch progress
+- Completed videos
+- Watch later
+- Watch history
+- Local storage
+
+Avoid putting everything into one huge component.
+
+Keep the code clean, readable, maintainable and scalable.
+
+==================================================
+21. IMPORTANT: DATA STRUCTURE
+
+Create a flexible video object structure similar to:
+
+{
+id,
+title,
+thumbnail,
+videoUrl,
+duration,
+category,
+subject,
+lectureNumber,
+createdAt
+}
+
+Do not assume every field will always exist.
+
+The UI must gracefully handle missing metadata.
+
+==================================================
+22. PERFORMANCE
+
+The application should feel fast.
+
+Use:
+
+- Lazy loading where appropriate
+- Efficient rendering
+- Optimized images
+- Avoid unnecessary re-renders
+- Avoid loading every video unnecessarily
+- Use responsive image handling where possible
+
+Do not sacrifice functionality for visual effects.
+
+==================================================
+23. IMPORTANT DESIGN RULE
+
+The final website should look like:
+
+"A premium, clean video streaming platform that can comfortably be used for both watching movies and studying lectures."
+
+It should NOT look like:
+
+- A basic school website
+- A generic admin dashboard
+- A direct YouTube clone
+- A flashy gaming website
+
+Use YouTube's familiarity as inspiration, but create a distinct professional identity using the green + white design system.
+
+==================================================
+24. FINAL REQUIREMENT
+
+Before finishing:
+
+1. Make sure the application runs without errors.
+2. Make sure all routes/pages work.
+3. Make sure the design is responsive.
+4. Make sure Continue Watching works.
+5. Make sure Completed works.
+6. Make sure Watch Later works.
+7. Make sure Recently Watched works.
+8. Make sure Today Lecture works.
+9. Make sure Search works.
+10. Make sure localStorage persistence works.
+11. Make sure the existing video player is not broken.
+12. Make sure no existing player functionality is unnecessarily replaced.
+13. Test the application on desktop and mobile layouts.
+14. Fix console errors.
+15. Fix visual overflow and spacing issues.
+16. Ensure the final result looks production-quality.
+
+Do not just create a basic prototype.
+
+Build the UI as a polished, production-quality streaming website with a consistent design system and reusable components.
