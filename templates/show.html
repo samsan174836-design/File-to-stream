@@ -1253,9 +1253,11 @@
         let streamingMode = "fast";
         let liveEdgeStartedAt = 0;
         let liveEdgeStartedClock = 0;
+        let liveStateTimer = null;
         const speeds = [0.75, 1, 1.25, 1.5, 2];
         const playbackStorageKey = `karva-bhaiya:playback-position:${fileId}`;
         const completionStorageKey = `karva-bhaiya:playback-complete:${fileId}`;
+        const liveTimelineStorageKey = `karva-bhaiya:live-timeline:${fileId}`;
         const libraryStateKey = "karva-bhaiya:library-state";
 
         const setText = (id, value) => {
@@ -1302,6 +1304,7 @@
             bigPlay.setAttribute("aria-label", playing ? "Pause video" : "Play video");
             playerCard.classList.toggle("is-playing", playing);
             muteToggle.textContent = activeMedia.muted || activeMedia.volume === 0 ? "🔇" : "🔊";
+            updateStreamModeUi();
         }
 
         function startPlayback() {
@@ -1419,35 +1422,68 @@
         function getLiveEdgeTime() {
             if (!activeMedia || !Number.isFinite(activeMedia.duration)) return 0;
             if (streamingMode !== "live" || !liveEdgeStartedClock) return activeMedia.duration;
-            const elapsed = Math.max(0, (performance.now() - liveEdgeStartedClock) / 1000);
+            const elapsed = Math.max(0, (Date.now() - liveEdgeStartedClock) / 1000);
             return Math.min(activeMedia.duration, liveEdgeStartedAt + elapsed);
+        }
+
+        function isAtLiveEdge() {
+            if (streamingMode !== "live" || !activeMedia || !Number.isFinite(activeMedia.duration)) return false;
+            const liveEdge = getLiveEdgeTime();
+            return liveEdge < activeMedia.duration
+                && Math.abs(liveEdge - activeMedia.currentTime) <= 2;
+        }
+
+        function updateStreamModeUi() {
+            const atLiveEdge = isAtLiveEdge();
+            streamModeToggle.textContent = streamingMode === "live" && atLiveEdge
+                ? "Live Streaming"
+                : "Fast Streaming";
+            streamModeToggle.classList.toggle("is-live", atLiveEdge);
+            streamModeToggle.setAttribute("aria-pressed", String(streamingMode === "live"));
+            streamModeToggle.setAttribute(
+                "aria-label",
+                streamingMode === "live"
+                    ? (atLiveEdge ? "Switch to Fast Streaming" : "Jump to live edge")
+                    : "Start Live Streaming"
+            );
+            streamModeToggle.title = streamingMode === "live" && !atLiveEdge
+                ? "Jump to the current live edge"
+                : "";
         }
 
         function keepPlaybackBehindLiveEdge() {
             if (streamingMode !== "live" || !activeMedia) return;
             const liveEdge = getLiveEdgeTime();
-            if (activeMedia.currentTime > liveEdge) activeMedia.currentTime = liveEdge;
+            if (activeMedia.currentTime > liveEdge + .25) {
+                activeMedia.currentTime = liveEdge;
+                if (!activeMedia.paused && !activeMedia.ended) activeMedia.pause();
+            }
+            updateStreamModeUi();
         }
 
         function setStreamingMode(mode) {
             streamingMode = mode === "live" ? "live" : "fast";
             if (streamingMode === "live") {
                 liveEdgeStartedAt = Number(activeMedia?.currentTime) || 0;
-                liveEdgeStartedClock = performance.now();
-                if (activeMedia) activeMedia.playbackRate = 1;
-                speedIndex = speeds.indexOf(1);
+                liveEdgeStartedClock = Date.now();
+                try {
+                    localStorage.setItem(liveTimelineStorageKey, JSON.stringify({
+                        startedAt: liveEdgeStartedClock,
+                        startPosition: liveEdgeStartedAt
+                    }));
+                } catch {
+                    // Live mode still works for the current page if storage is unavailable.
+                }
             } else {
                 liveEdgeStartedAt = 0;
                 liveEdgeStartedClock = 0;
+                try {
+                    localStorage.removeItem(liveTimelineStorageKey);
+                } catch {
+                    // Ignore storage errors.
+                }
             }
-            streamModeToggle.textContent = streamingMode === "live" ? "Live Streaming" : "Fast Streaming";
-            streamModeToggle.classList.toggle("is-live", streamingMode === "live");
-            streamModeToggle.setAttribute("aria-pressed", String(streamingMode === "live"));
-            streamModeToggle.setAttribute("aria-label", streamingMode === "live"
-                ? "Switch to Fast Streaming"
-                : "Switch to Live Streaming");
-            speedToggle.disabled = streamingMode === "live";
-            speedToggle.title = streamingMode === "live" ? "Live Streaming is fixed at 1x" : "Change playback speed";
+            updateStreamModeUi();
             revealPlayerControls(1000);
         }
 
@@ -1500,6 +1536,11 @@
             media.addEventListener("ended", markPlaybackComplete);
             ["loadedmetadata", "durationchange", "timeupdate", "play", "pause", "ended", "volumechange"]
                 .forEach((eventName) => media.addEventListener(eventName, updatePlayerUi));
+            liveStateTimer = window.setInterval(() => {
+                if (!activeMedia || streamingMode !== "live") return;
+                keepPlaybackBehindLiveEdge();
+                updatePlayerUi();
+            }, 250);
             updatePlayerUi();
         }
 
@@ -1580,14 +1621,26 @@
             updatePlayerUi();
         };
         speedToggle.onclick = () => {
-            if (!activeMedia || streamingMode === "live") return;
+            if (!activeMedia) return;
             speedIndex = (speedIndex + 1) % speeds.length;
             activeMedia.playbackRate = speeds[speedIndex];
             speedToggle.textContent = `${speeds[speedIndex]}x`;
         };
         streamModeToggle.onclick = (event) => {
             event.stopPropagation();
-            setStreamingMode(streamingMode === "live" ? "fast" : "live");
+            if (streamingMode === "fast") {
+                setStreamingMode("live");
+                return;
+            }
+            if (isAtLiveEdge()) {
+                setStreamingMode("fast");
+                return;
+            }
+            if (activeMedia && Number.isFinite(activeMedia.duration)) {
+                activeMedia.currentTime = getLiveEdgeTime();
+                savePlaybackPosition();
+                updatePlayerUi();
+            }
         };
         fullscreenToggle.onclick = async () => {
             if (document.fullscreenElement) {
@@ -1617,6 +1670,7 @@
             }
             playbackCompleted = false;
             playerCard.classList.remove("is-complete");
+            setStreamingMode("fast");
             completionState.hidden = true;
             activeMedia.currentTime = 0;
             updatePlayerUi();
