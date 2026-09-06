@@ -1,0 +1,94 @@
+2026-09-06T18:00:09.280691+00:00 app[web.1]:     template = self.cache.get(cache_key)
+2026-09-06T18:00:09.280691+00:00 app[web.1]:                ^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-06T18:00:09.280691+00:00 app[web.1]:   File "/app/.heroku/python/lib/python3.12/site-packages/jinja2/utils.py", line 477, in get
+2026-09-06T18:00:09.280692+00:00 app[web.1]:     return self[key]
+2026-09-06T18:00:09.280692+00:00 app[web.1]:            ~~~~^^^^^
+2026-09-06T18:00:09.280692+00:00 app[web.1]:   File "/app/.heroku/python/lib/python3.12/site-packages/jinja2/utils.py", line 515, in __getitem__
+2026-09-06T18:00:09.280692+00:00 app[web.1]:     rv = self._mapping[key]
+2026-09-06T18:00:09.280692+00:00 app[web.1]:          ~~~~~~~~~~~~~^^^^^
+2026-09-06T18:00:09.280693+00:00 app[web.1]: TypeError: unhashable type: 'dict'
+2026-09-06T18:00:09.281019+00:00 heroku[router]: at=info method=GET path="/show/P7Sf5HWglOk" host=stream-4c63336291cd.herokuapp.com request_id=e020e98e-f783-ea06-7fb2-d48a40904d23 fwd="106.192.195.127" dyno=web.1 connect=0ms service=2ms status=500 bytes=21 protocol=http1.1 tls=false
+2026-09-06T18:00:46.053771+00:00 heroku[router]: at=info method=GET path="/show/P7Sf5HWglOk" host=stream-4c63336291cd.herokuapp.com request_id=42c05f71-dc77-73b2-d87b-d92ba99a0582 fwd="106.192.195.127" dyno=web.1 connect=0ms service=3ms status=500 bytes=21 protocol=http1.1 tls=false
+2026-09-06T18:00:46.051697+00:00 app[web.1]: INFO:     106.192.195.127:0 - "GET /show/P7Sf5HWglOk HTTP/1.1" 500 Internal Server Error
+2026-09-06T18:00:46.053299+00:00 app[web.1]: ERROR:    Exception in ASGI application
+2026-09-06T18:00:46.053300+00:00 app[web.1]: Traceback (most recent call last):
+2026-09-06T18:00:46.053303+00:00 app[web.1]:   File "/app/.heroku/python/lib/python3.12/site-packages/uvicorn/protocols/http/httptools_impl.py", line 422, in run_asgi
+2026-09-06T18:00:46.053304+00:00 app[web.1]:     result = await app(  # type: ignore[func-returns-value]
+2026-09-06T18:00:46.053305+00:00 app[web.1]:              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-06T18:00:46.053305+00:00 app[web.1]:   File "/app/.heroku/python/lib/python3.12/site-packages/uvicorn/middleware/proxy_headers.py", line 63, in __call__
+2026-09-06T18:00:46.053305+00:00 app[web.1]:     return await self.app(scope, receive, send)
+2026-09-06T18:00:46.053306+00:00 app[web.1]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-06T18:00:46.053306+00:00 app[web.1]:   File "/app/.heroku/python/lib/python3.12/site-packages/fastapi/applications.py", line 1163, in __call__
+2026-09-06T18:00:46.053307+00:00 app[web.1]:     await super().__call__(scope, receive, send)
+2026-09-06T18:00:46.053307+00:00 app[web.1]:   File "/app/.heroku/python/lib/python3.12/site-packages/starlette/applications.py", line 96, in __call__
+2026-09-06T18:00:46.053307+00:00 app[web.1]:     await self.middleware_stack(scope, receive, send)
+2026-09-06T18:00:46.053308+00:00 app[web.1]:   File "/app/.heroku/python/lib/python3.12/site-packages/starlette/middleware/errors.py", line 186, in __call__
+2026-09-06T18:00:46.053308+00:00 app[web.1]:     raise exc
+2026-09-06T18:00:46.053308+00:00 app[web.1]:   File "/app/.heroku/python/lib/python3.12/site-packages/starlette/middleware/errors.py", line 164, in __call__
+2026-09-06T18:00:46.053309+00:00 app[web.1]:     await self.app(scope, receive, _send)
+2026-09-06T18:00:46.053309+00:00 app[web.1]:   File "/app/.heroku/python/lib/python3.12/site-packages/starlette/middleware/cors.py", line 88, in __call__
+2026-09-06T18:00:46.053309+00:00 app[web.1]:     await self.app(scope, receive, send)
+2026-09-06T18:00:46.053309+00:00 app[web.1]:   File "/app/.heroku/python/lib/python3.12/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+2026-09-06T18:00:46.053310+00:00 app[web.1]:     await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+2026-09-06T18:00:46.053311+00:00 app[web.1]:   File "/app/.heroku/python/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+2026-09-06T18:00:46.053311+00:00 app[web.1]:     raise exc
+2026-09-06T18:00:46.053311+00:00 app[web.1]:   File "/app/.heroku/python/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+2026-09-06T18:00:46.053311+00:00 app[web.1]:     await app(scope, receive, sender)
+2026-09-06T18:00:46.053312+00:00 app[web.1]:   File "/app/.heroku/python/lib/python3.12/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+2026-09-06T18:00:46.053312+00:00 app[web.1]:     await self.app(scope, receive, send)
+2026-09-06T18:00:46.053312+00:00 app[web.1]:   File "/app/.heroku/python/lib/python3.12/site-packages/starlette/routing.py", line 670, in __call__
+2026-09-06T18:00:46.053312+00:00 app[web.1]:     await self.middleware_stack(scope, receive, send)
+2026-09-06T18:00:46.053313+00:00 app[web.1]:   File "/app/.heroku/python/lib/python3.12/site-packages/fastapi/routing.py", line 2734, in app
+2026-09-06T18:00:46.053313+00:00 app[web.1]:     await route.handle(scope, receive, send)
+2026-09-06T18:00:46.053313+00:00 app[web.1]:   File "/app/.heroku/python/lib/python3.12/site-packages/fastapi/routing.py", line 1281, in handle
+2026-09-06T18:00:46.053313+00:00 app[web.1]:     await super().handle(scope, receive, send)
+2026-09-06T18:00:46.053313+00:00 app[web.1]:   File "/app/.heroku/python/lib/python3.12/site-packages/starlette/routing.py", line 280, in handle
+2026-09-06T18:00:46.053314+00:00 app[web.1]:     await self.app(scope, receive, send)
+2026-09-06T18:00:46.053330+00:00 app[web.1]:   File "/app/.heroku/python/lib/python3.12/site-packages/fastapi/routing.py", line 158, in app
+2026-09-06T18:00:46.053331+00:00 app[web.1]:     await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+2026-09-06T18:00:46.053331+00:00 app[web.1]:   File "/app/.heroku/python/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+2026-09-06T18:00:46.053331+00:00 app[web.1]:     raise exc
+2026-09-06T18:00:46.053331+00:00 app[web.1]:   File "/app/.heroku/python/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+2026-09-06T18:00:46.053332+00:00 app[web.1]:     await app(scope, receive, sender)
+2026-09-06T18:00:46.053332+00:00 app[web.1]:   File "/app/.heroku/python/lib/python3.12/site-packages/fastapi/routing.py", line 144, in app
+2026-09-06T18:00:46.053332+00:00 app[web.1]:     response = await f(request)
+2026-09-06T18:00:46.053333+00:00 app[web.1]:                ^^^^^^^^^^^^^^^^
+2026-09-06T18:00:46.053333+00:00 app[web.1]:   File "/app/.heroku/python/lib/python3.12/site-packages/fastapi/routing.py", line 706, in app
+2026-09-06T18:00:46.053333+00:00 app[web.1]:     raw_response = await run_endpoint_function(
+2026-09-06T18:00:46.053333+00:00 app[web.1]:                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-06T18:00:46.053333+00:00 app[web.1]:   File "/app/.heroku/python/lib/python3.12/site-packages/fastapi/routing.py", line 352, in run_endpoint_function
+2026-09-06T18:00:46.053334+00:00 app[web.1]:     return await dependant.call(**values)
+2026-09-06T18:00:46.053334+00:00 app[web.1]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-06T18:00:46.053334+00:00 app[web.1]:   File "/app/app.py", line 282, in show_page
+2026-09-06T18:00:46.053334+00:00 app[web.1]:     return templates.TemplateResponse(
+2026-09-06T18:00:46.053335+00:00 app[web.1]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-06T18:00:46.053335+00:00 app[web.1]:   File "/app/.heroku/python/lib/python3.12/site-packages/starlette/templating.py", line 148, in TemplateResponse
+2026-09-06T18:00:46.053335+00:00 app[web.1]:     template = self.get_template(name)
+2026-09-06T18:00:46.053335+00:00 app[web.1]:                ^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-06T18:00:46.053335+00:00 app[web.1]:   File "/app/.heroku/python/lib/python3.12/site-packages/starlette/templating.py", line 115, in get_template
+2026-09-06T18:00:46.053335+00:00 app[web.1]:     return self.env.get_template(name)
+2026-09-06T18:00:46.053335+00:00 app[web.1]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-06T18:00:46.053338+00:00 app[web.1]:   File "/app/.heroku/python/lib/python3.12/site-packages/jinja2/environment.py", line 1016, in get_template
+2026-09-06T18:00:46.053338+00:00 app[web.1]:     return self._load_template(name, globals)
+2026-09-06T18:00:46.053338+00:00 app[web.1]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-06T18:00:46.053338+00:00 app[web.1]:   File "/app/.heroku/python/lib/python3.12/site-packages/jinja2/environment.py", line 964, in _load_template
+2026-09-06T18:00:46.053339+00:00 app[web.1]:     template = self.cache.get(cache_key)
+2026-09-06T18:00:46.053339+00:00 app[web.1]:                ^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-06T18:00:46.053339+00:00 app[web.1]:   File "/app/.heroku/python/lib/python3.12/site-packages/jinja2/utils.py", line 477, in get
+2026-09-06T18:00:46.053339+00:00 app[web.1]:     return self[key]
+2026-09-06T18:00:46.053339+00:00 app[web.1]:            ~~~~^^^^^
+2026-09-06T18:00:46.053340+00:00 app[web.1]:   File "/app/.heroku/python/lib/python3.12/site-packages/jinja2/utils.py", line 515, in __getitem__
+2026-09-06T18:00:46.053340+00:00 app[web.1]:     rv = self._mapping[key]
+2026-09-06T18:00:46.053340+00:00 app[web.1]:          ~~~~~~~~~~~~~^^^^^
+2026-09-06T18:00:46.053340+00:00 app[web.1]: TypeError: unhashable type: 'dict'
+Disconnected from log stream. There may be events happening that you do not see here! Attempting to reconnect...
+2026-09-06T18:00:46.053339+00:00 app[web.1]:     template = self.cache.get(cache_key)
+2026-09-06T18:00:46.053339+00:00 app[web.1]:                ^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-06T18:00:46.053339+00:00 app[web.1]:   File "/app/.heroku/python/lib/python3.12/site-packages/jinja2/utils.py", line 477, in get
+2026-09-06T18:00:46.053339+00:00 app[web.1]:     return self[key]
+2026-09-06T18:00:46.053339+00:00 app[web.1]:            ~~~~^^^^^
+2026-09-06T18:00:46.053340+00:00 app[web.1]:   File "/app/.heroku/python/lib/python3.12/site-packages/jinja2/utils.py", line 515, in __getitem__
+2026-09-06T18:00:46.053340+00:00 app[web.1]:     rv = self._mapping[key]
+2026-09-06T18:00:46.053340+00:00 app[web.1]:          ~~~~~~~~~~~~~^^^^^
+2026-09-06T18:00:46.053340+00:00 app[web.1]: TypeError: unhashable type: 'dict'
+2026-09-06T18:00:46.053771+00:00 heroku[router]: at=info method=GET path="/show/P7Sf5HWglOk" host=stream-4c63336291cd.herokuapp.com request_id=42c05f71-dc77-73b2-d87b-d92ba99a0582 fwd="106.192.195.127" dyno=web.1 connect=0ms service=3ms status=500 bytes=21 protocol=http1.1 tls=false

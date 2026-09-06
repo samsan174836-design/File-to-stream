@@ -280,8 +280,9 @@ async def health_check():
 @app.get("/show/{unique_id}", response_class=HTMLResponse)
 async def show_page(request: Request, unique_id: str):
     return templates.TemplateResponse(
-        "show.html",
-        {"request": request}
+        request=request,
+        name="show.html",
+        context={"request": request}
     )
 
 @app.get("/api/file/{unique_id}", response_class=JSONResponse)
@@ -354,7 +355,10 @@ async def stream_media(r:Request,mid:int,fname:str):
             rps=rh.replace("bytes=","").split("-");fb=int(rps[0])
             if len(rps)>1 and rps[1]:ub=int(rps[1])
         if(ub>=fsize)or(fb<0):raise HTTPException(416)
-        rl=ub-fb+1;cs=1024*1024;off=(fb//cs)*cs;fc=fb-off;lc=(ub%cs)+1;pc=math.ceil(rl/cs)
+        rl=ub-fb+1;cs=1024*1024;off=(fb//cs)*cs;fc=fb-off;lc=(ub%cs)+1
+        # The first Telegram chunk starts at the aligned offset, so include
+        # every source chunk touched by the requested byte range.
+        pc=math.ceil((ub-off+1)/cs)
         body=tc.yield_file(fid,client_id,off,fc,lc,pc,cs);sc=206 if rh else 200
         hdrs={"Content-Type":m.mime_type or "application/octet-stream","Accept-Ranges":"bytes","Content-Disposition":f'inline; filename="{m.file_name}"',"Content-Length":str(rl)}
         if rh:hdrs["Content-Range"]=f"bytes {fb}-{ub}/{fsize}"
