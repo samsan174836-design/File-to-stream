@@ -815,6 +815,8 @@
             margin-bottom: 8px;
             color: var(--text);
             font-size: clamp(18px, 3vw, 25px);
+            overflow-wrap: anywhere;
+            white-space: normal;
         }
 
         .file-subtitle {
@@ -957,6 +959,86 @@
             color: #a44343;
         }
 
+        .player-card.is-complete video,
+        .player-card.is-complete .custom-controls,
+        .player-card.is-complete .big-play,
+        .player-card.is-complete .player-overlay-top {
+            display: none !important;
+        }
+
+        .completion-state {
+            display: grid;
+            position: absolute;
+            inset: 0;
+            z-index: 6;
+            place-items: center;
+            align-content: center;
+            gap: 9px;
+            padding: 28px;
+            color: #fff;
+            background:
+                radial-gradient(circle at 50% 34%, rgba(35, 135, 76, .34), transparent 16rem),
+                linear-gradient(145deg, #0b1f12, #06100a);
+            text-align: center;
+        }
+
+        .completion-icon {
+            display: grid;
+            width: 54px;
+            height: 54px;
+            margin-bottom: 5px;
+            place-items: center;
+            border: 1px solid rgba(153, 239, 180, .5);
+            border-radius: 50%;
+            color: #baf6cc;
+            background: rgba(68, 181, 103, .18);
+            font-size: 24px;
+            font-weight: 800;
+        }
+
+        .completion-kicker {
+            margin: 0;
+            color: #78d99a;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: .16em;
+            text-transform: uppercase;
+        }
+
+        .completion-state h2 {
+            margin: 0;
+            color: #fff;
+            font-size: clamp(25px, 5vw, 36px);
+            letter-spacing: -.04em;
+        }
+
+        .completion-state p:not(.completion-kicker) {
+            max-width: 340px;
+            margin: 0 0 9px;
+            color: rgba(255, 255, 255, .66);
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .restart-playback {
+            min-width: 132px;
+            min-height: 42px;
+            padding: 9px 18px;
+            border: 1px solid #61d68a;
+            border-radius: 10px;
+            color: #092012;
+            background: #8ce6a9;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 800;
+            transition: background .18s ease, transform .18s ease;
+        }
+
+        .restart-playback:hover {
+            transform: translateY(-1px);
+            background: #b2f2c5;
+        }
+
         @media (max-width: 650px) {
             .topbar { height: 68px; }
             .page { width: min(100% - 24px, 960px); margin-top: 34px; }
@@ -996,6 +1078,13 @@
             <div class="player-overlay-top" aria-hidden="true">
                 <span class="player-badge">Secure stream</span>
                 <span class="player-shortcut">← / → 10 sec &nbsp;•&nbsp; ↑ / ↓ volume</span>
+            </div>
+            <div class="completion-state" id="completion-state" hidden>
+                <div class="completion-icon" aria-hidden="true">✓</div>
+                <p class="completion-kicker">Playback complete</p>
+                <h2>You Are Done</h2>
+                <p>You have already watched this video. Restart it only if you want to watch it again.</p>
+                <button class="restart-playback" id="restart-playback" type="button">Restart</button>
             </div>
             <div class="player-loading" id="loader">Loading your file...</div>
             <video id="video-player" playsinline preload="metadata" tabindex="0" hidden></video>
@@ -1094,10 +1183,14 @@
         const volumeBar = document.getElementById("volume-bar");
         const speedToggle = document.getElementById("speed-toggle");
         const fullscreenToggle = document.getElementById("fullscreen-toggle");
+        const completionState = document.getElementById("completion-state");
+        const restartPlayback = document.getElementById("restart-playback");
         let activeMedia = null;
+        let playbackCompleted = false;
         let speedIndex = 1;
         const speeds = [0.75, 1, 1.25, 1.5, 2];
         const playbackStorageKey = `karva-bhaiya:playback-position:${fileId}`;
+        const completionStorageKey = `karva-bhaiya:playback-complete:${fileId}`;
 
         const setText = (id, value) => {
             document.getElementById(id).textContent = value || "";
@@ -1141,12 +1234,37 @@
         }
 
         function startPlayback() {
-            if (!activeMedia) return;
+            if (!activeMedia || playbackCompleted) return;
             if (activeMedia.paused || activeMedia.ended) {
                 activeMedia.play().catch(() => {});
             } else {
                 activeMedia.pause();
             }
+        }
+
+        function hasCompletedPlayback() {
+            try {
+                return localStorage.getItem(completionStorageKey) === "true";
+            } catch {
+                return false;
+            }
+        }
+
+        function showCompletionState() {
+            playbackCompleted = true;
+            activeMedia?.pause();
+            playerCard.classList.add("is-complete");
+            completionState.hidden = false;
+        }
+
+        function markPlaybackComplete() {
+            try {
+                localStorage.setItem(completionStorageKey, "true");
+                localStorage.removeItem(playbackStorageKey);
+            } catch {
+                // Playback completion still works for the current page.
+            }
+            showCompletionState();
         }
 
         function savePlaybackPosition() {
@@ -1164,6 +1282,10 @@
 
         function restorePlaybackPosition() {
             if (!activeMedia || !Number.isFinite(activeMedia.duration)) return;
+            if (hasCompletedPlayback()) {
+                showCompletionState();
+                return;
+            }
             try {
                 const savedPosition = Number(localStorage.getItem(playbackStorageKey));
                 if (Number.isFinite(savedPosition) && savedPosition > 0
@@ -1207,6 +1329,7 @@
             media.addEventListener("timeupdate", savePlaybackPosition);
             media.addEventListener("pause", savePlaybackPosition);
             media.addEventListener("ended", savePlaybackPosition);
+            media.addEventListener("ended", markPlaybackComplete);
             ["loadedmetadata", "durationchange", "timeupdate", "play", "pause", "ended", "volumechange"]
                 .forEach((eventName) => media.addEventListener(eventName, updatePlayerUi));
             updatePlayerUi();
@@ -1267,6 +1390,21 @@
                 activeMedia.webkitEnterFullscreen();
             }
         };
+        restartPlayback.onclick = () => {
+            if (!activeMedia) return;
+            try {
+                localStorage.removeItem(completionStorageKey);
+                localStorage.removeItem(playbackStorageKey);
+            } catch {
+                // The video can still be restarted for this session.
+            }
+            playbackCompleted = false;
+            playerCard.classList.remove("is-complete");
+            completionState.hidden = true;
+            activeMedia.currentTime = 0;
+            updatePlayerUi();
+            activeMedia.play().catch(() => {});
+        };
         window.addEventListener("pagehide", savePlaybackPosition);
 
         async function loadFile() {
@@ -1294,19 +1432,19 @@
                     `https://t.me/${data.bot_username || ""}?start=verify_${encodeURIComponent(fileId)}`;
 
                 if (isVideo) {
+                    setupPlayer(video);
                     video.src = directLink;
                     video.hidden = false;
                     video.load();
-                    setupPlayer(video);
                     document.getElementById("browser-link").onclick = (event) => {
                         event.preventDefault();
                         startPlayback();
                     };
                 } else if (isAudio) {
+                    setupPlayer(audio);
                     audio.src = directLink;
                     audio.hidden = false;
                     audio.load();
-                    setupPlayer(audio);
                     document.getElementById("browser-link").onclick = (event) => {
                         event.preventDefault();
                         startPlayback();
@@ -1316,6 +1454,7 @@
                     document.getElementById("browser-link").classList.add("disabled");
                 }
 
+                document.getElementById("file-name").title = data.file_name || "";
                 loader.hidden = true;
                 content.hidden = false;
             } catch (error) {

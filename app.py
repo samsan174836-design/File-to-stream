@@ -425,7 +425,7 @@ async def get_file_details_api(request: Request, unique_id: str):
     safe_file_name = "".join(c for c in file_name if c.isalnum() or c in (' ', '.', '_', '-')).rstrip()
     mime_type = media.mime_type or "application/octet-stream"
     response_data = {
-        "file_name": mask_filename(file_name),
+        "file_name": file_name,
         "file_size": get_readable_file_size(media.file_size),
         "is_media": mime_type.startswith(("video", "audio")),
         "mime_type": mime_type,
