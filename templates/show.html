@@ -778,6 +778,34 @@
             box-shadow: 0 0 0 3px rgba(240, 77, 85, .18), 0 0 10px rgba(240, 77, 85, .75);
         }
 
+        .progress-track {
+            position: relative;
+        }
+
+        .live-edge-label {
+            position: absolute;
+            right: 0;
+            bottom: 7px;
+            display: none;
+            padding: 2px 5px;
+            color: #fff;
+            background: rgba(112, 21, 28, .92);
+            border-radius: 4px;
+            font-size: 9px;
+            font-weight: 800;
+            letter-spacing: .08em;
+            line-height: 1;
+            pointer-events: none;
+        }
+
+        .player-card.live-mode .live-edge-label {
+            display: inline-flex;
+        }
+
+        .player-card.live-mode .time-label {
+            display: none;
+        }
+
         .player-card:fullscreen {
             width: 100vw;
             height: 100vh;
@@ -1147,7 +1175,10 @@
             <audio id="audio-player" preload="metadata" tabindex="0" hidden></audio>
             <button class="big-play" id="big-play" aria-label="Play video" hidden>▶</button>
             <div class="custom-controls" id="custom-controls" hidden>
-                <input class="progress-bar" id="progress-bar" type="range" min="0" max="1000" value="0" aria-label="Video progress">
+                <div class="progress-track">
+                    <input class="progress-bar" id="progress-bar" type="range" min="0" max="1000" value="0" aria-label="Video progress">
+                    <span class="live-edge-label" id="live-edge-label" aria-hidden="true">LIVE</span>
+                </div>
                 <div class="control-row">
                     <button class="control-btn" id="play-toggle" aria-label="Play or pause">▶</button>
                     <span class="time-label" id="time-label">0:00 / 0:00</span>
@@ -1258,6 +1289,7 @@
         const playbackStorageKey = `karva-bhaiya:playback-position:${fileId}`;
         const completionStorageKey = `karva-bhaiya:playback-complete:${fileId}`;
         const liveTimelineStorageKey = `karva-bhaiya:live-timeline:${fileId}`;
+        const liveModeStorageKey = `karva-bhaiya:live-mode:${fileId}`;
         const libraryStateKey = "karva-bhaiya:library-state";
 
         const setText = (id, value) => {
@@ -1292,7 +1324,9 @@
             const duration = Number.isFinite(activeMedia.duration) ? activeMedia.duration : 0;
             keepPlaybackBehindLiveEdge();
             const current = Number.isFinite(activeMedia.currentTime) ? activeMedia.currentTime : 0;
-            progressBar.value = duration ? String(Math.round((current / duration) * 1000)) : "0";
+            const progressEnd = streamingMode === "live" ? getLiveEdgeTime() : duration;
+            const progressValue = progressEnd > 0 ? Math.min(1, current / progressEnd) : 0;
+            progressBar.value = String(Math.round(progressValue * 1000));
             timeLabel.textContent = `${formatTime(current)} / ${formatTime(duration)}`;
             const playing = !activeMedia.paused && !activeMedia.ended;
             if (!playing) {
@@ -1335,10 +1369,13 @@
             try {
                 localStorage.setItem(completionStorageKey, "true");
                 localStorage.removeItem(playbackStorageKey);
+                localStorage.removeItem(liveModeStorageKey);
+                localStorage.removeItem(liveTimelineStorageKey);
             } catch {
                 // Playback completion still works for the current page.
             }
             syncSharedLibraryState(true);
+            setStreamingMode("fast");
             showCompletionState();
         }
 
@@ -1435,20 +1472,19 @@
 
         function updateStreamModeUi() {
             const atLiveEdge = isAtLiveEdge();
-            streamModeToggle.textContent = streamingMode === "live" && atLiveEdge
-                ? "Live Streaming"
-                : "Fast Streaming";
-            streamModeToggle.classList.toggle("is-live", atLiveEdge);
+            const liveMode = streamingMode === "live";
+            streamModeToggle.textContent = liveMode ? "Live Streaming" : "Fast Streaming";
+            streamModeToggle.classList.toggle("is-live", liveMode);
+            streamModeToggle.disabled = liveMode;
+            playerCard.classList.toggle("live-mode", liveMode);
             streamModeToggle.setAttribute("aria-pressed", String(streamingMode === "live"));
             streamModeToggle.setAttribute(
                 "aria-label",
-                streamingMode === "live"
-                    ? (atLiveEdge ? "Switch to Fast Streaming" : "Jump to live edge")
-                    : "Start Live Streaming"
+                liveMode ? "Live Streaming is locked until playback is complete" : "Start Live Streaming"
             );
-            streamModeToggle.title = streamingMode === "live" && !atLiveEdge
-                ? "Jump to the current live edge"
-                : "";
+            streamModeToggle.title = liveMode
+                ? "Finish the live class to return to Fast Streaming"
+                : "Start Live Streaming";
         }
 
         function keepPlaybackBehindLiveEdge() {
@@ -1471,6 +1507,7 @@
                         startedAt: liveEdgeStartedClock,
                         startPosition: liveEdgeStartedAt
                     }));
+                    localStorage.setItem(liveModeStorageKey, "true");
                 } catch {
                     // Live mode still works for the current page if storage is unavailable.
                 }
@@ -1479,12 +1516,34 @@
                 liveEdgeStartedClock = 0;
                 try {
                     localStorage.removeItem(liveTimelineStorageKey);
+                    localStorage.removeItem(liveModeStorageKey);
                 } catch {
                     // Ignore storage errors.
                 }
             }
             updateStreamModeUi();
             revealPlayerControls(1000);
+        }
+
+        function restoreLiveModeState() {
+            if (hasCompletedPlayback()) {
+                streamingMode = "fast";
+                liveEdgeStartedAt = 0;
+                liveEdgeStartedClock = 0;
+                return;
+            }
+            try {
+                if (localStorage.getItem(liveModeStorageKey) !== "true") return;
+                const savedTimeline = JSON.parse(localStorage.getItem(liveTimelineStorageKey) || "{}");
+                const startedAt = Number(savedTimeline.startedAt);
+                const startPosition = Number(savedTimeline.startPosition);
+                if (!Number.isFinite(startedAt) || !Number.isFinite(startPosition)) return;
+                streamingMode = "live";
+                liveEdgeStartedAt = Math.max(0, startPosition);
+                liveEdgeStartedClock = startedAt;
+            } catch {
+                // Fall back to Fast Streaming if the saved live state is unavailable.
+            }
         }
 
         function changeVolume(amount) {
@@ -1529,6 +1588,7 @@
             media.volume = Number(volumeBar.value);
             customControls.hidden = false;
             bigPlay.hidden = false;
+            restoreLiveModeState();
             media.addEventListener("loadedmetadata", restorePlaybackPosition);
             media.addEventListener("timeupdate", savePlaybackPosition);
             media.addEventListener("pause", savePlaybackPosition);
@@ -1601,7 +1661,10 @@
         });
         progressBar.oninput = () => {
             if (activeMedia && Number.isFinite(activeMedia.duration)) {
-                const requestedTime = activeMedia.duration * (Number(progressBar.value) / 1000);
+                const progressEnd = streamingMode === "live"
+                    ? getLiveEdgeTime()
+                    : activeMedia.duration;
+                const requestedTime = progressEnd * (Number(progressBar.value) / 1000);
                 activeMedia.currentTime = Math.min(
                     requestedTime,
                     streamingMode === "live" ? getLiveEdgeTime() : activeMedia.duration
@@ -1630,16 +1693,6 @@
             event.stopPropagation();
             if (streamingMode === "fast") {
                 setStreamingMode("live");
-                return;
-            }
-            if (isAtLiveEdge()) {
-                setStreamingMode("fast");
-                return;
-            }
-            if (activeMedia && Number.isFinite(activeMedia.duration)) {
-                activeMedia.currentTime = getLiveEdgeTime();
-                savePlaybackPosition();
-                updatePlayerUi();
             }
         };
         fullscreenToggle.onclick = async () => {
