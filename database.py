@@ -14,9 +14,14 @@ class Database:
 
     async def connect(self):
         """Database se connection banata hai."""
-        if Config.DATABASE_URL:
+        database_url = Config.DATABASE_URL.strip()
+        if database_url and not database_url.startswith(("mongodb://", "mongodb+srv://")):
+            print("WARNING: DATABASE_URL is not a valid MongoDB URI. Continuing without database persistence.")
+            database_url = ""
+
+        if database_url:
             print("Connecting to the database...")
-            self._client = motor.motor_asyncio.AsyncIOMotorClient(Config.DATABASE_URL)
+            self._client = motor.motor_asyncio.AsyncIOMotorClient(database_url)
             self.db = self._client["StreamLinksDB"]
             self.collection = self.db["links"]
             await self.collection.create_index(

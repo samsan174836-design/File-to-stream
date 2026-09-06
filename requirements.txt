@@ -4,3 +4,12 @@ tgcrypto
 python-dotenv
 python-magic
 motor
+fastapi[standard]
+motor
+pymongo
+pyrogram
+python-dotenv
+python-magic
+tgcrypto
+tlgbotfwk
+uvicorn

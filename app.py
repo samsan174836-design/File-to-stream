@@ -378,11 +378,18 @@ async def cleanup_channel(c: Client):
 # --- FASTAPI WEB SERVER ---
 # =====================================================================================
  
-@app.get("/")
+@app.get("/", response_class=HTMLResponse)
+async def home_page(request: Request):
+    """Render the public landing page without changing individual video links."""
+    return templates.TemplateResponse(
+        request=request,
+        name="home.html",
+        context={"request": request, "bot_ready": bot_ready},
+    )
+
+@app.get("/health")
 async def health_check():
-    """
-    This route provides a 200 OK response for uptime monitors.
-    """
+    """JSON health endpoint for uptime monitors and deployment checks."""
     if not bot_ready:
         return JSONResponse(
             status_code=503,
