@@ -752,6 +752,32 @@
             transition: opacity .35s ease;
         }
 
+        .player-overlay-top .stream-mode-toggle {
+            pointer-events: auto;
+            border: 1px solid rgba(255, 255, 255, .2);
+            cursor: pointer;
+            transition: color .18s ease, background .18s ease, border-color .18s ease;
+        }
+
+        .stream-mode-toggle:hover,
+        .stream-mode-toggle:focus-visible {
+            color: #fff;
+            background: rgba(25, 135, 84, .72);
+            border-color: rgba(255, 255, 255, .42);
+            outline: none;
+        }
+
+        .stream-mode-toggle.is-live {
+            color: #fff1f1;
+            background: rgba(112, 21, 28, .74);
+            border-color: rgba(240, 77, 85, .72);
+        }
+
+        .stream-mode-toggle.is-live::before {
+            background: #f04d55;
+            box-shadow: 0 0 0 3px rgba(240, 77, 85, .18), 0 0 10px rgba(240, 77, 85, .75);
+        }
+
         .player-card:fullscreen {
             width: 100vw;
             height: 100vh;
@@ -808,6 +834,11 @@
         .speed-btn {
             width: 40px;
             color: #c4f4d2;
+        }
+
+        .speed-btn:disabled {
+            cursor: not-allowed;
+            opacity: .42;
         }
 
         #content {
@@ -1100,8 +1131,8 @@
         </section>
 
         <section class="player-card" id="player-card">
-            <div class="player-overlay-top" aria-hidden="true">
-                <span class="player-badge">Live Streaming</span>
+            <div class="player-overlay-top">
+                <button class="player-badge stream-mode-toggle" id="stream-mode-toggle" type="button" aria-label="Switch to Live Streaming" aria-pressed="false">Fast Streaming</button>
                 <span class="player-shortcut">Your Karva Bhaiya</span>
             </div>
             <div class="completion-state" id="completion-state" hidden>
@@ -1208,6 +1239,7 @@
         const volumeBar = document.getElementById("volume-bar");
         const speedToggle = document.getElementById("speed-toggle");
         const fullscreenToggle = document.getElementById("fullscreen-toggle");
+        const streamModeToggle = document.getElementById("stream-mode-toggle");
         const completionState = document.getElementById("completion-state");
         const restartPlayback = document.getElementById("restart-playback");
         let activeMedia = null;
@@ -1218,6 +1250,9 @@
         let lastTouchTapAt = 0;
         let lastTouchTapX = 0;
         let suppressTouchClickUntil = 0;
+        let streamingMode = "fast";
+        let liveEdgeStartedAt = 0;
+        let liveEdgeStartedClock = 0;
         const speeds = [0.75, 1, 1.25, 1.5, 2];
         const playbackStorageKey = `karva-bhaiya:playback-position:${fileId}`;
         const completionStorageKey = `karva-bhaiya:playback-complete:${fileId}`;
@@ -1253,6 +1288,7 @@
         function updatePlayerUi() {
             if (!activeMedia) return;
             const duration = Number.isFinite(activeMedia.duration) ? activeMedia.duration : 0;
+            keepPlaybackBehindLiveEdge();
             const current = Number.isFinite(activeMedia.currentTime) ? activeMedia.currentTime : 0;
             progressBar.value = duration ? String(Math.round((current / duration) * 1000)) : "0";
             timeLabel.textContent = `${formatTime(current)} / ${formatTime(duration)}`;
@@ -1370,13 +1406,49 @@
 
         function seekBy(seconds) {
             if (!activeMedia || !Number.isFinite(activeMedia.duration)) return;
+            const maximumTime = streamingMode === "live" ? getLiveEdgeTime() : activeMedia.duration;
             const nextTime = Math.min(
                 Math.max(activeMedia.currentTime + seconds, 0),
-                activeMedia.duration
+                maximumTime
             );
             activeMedia.currentTime = nextTime;
             savePlaybackPosition();
             updatePlayerUi();
+        }
+
+        function getLiveEdgeTime() {
+            if (!activeMedia || !Number.isFinite(activeMedia.duration)) return 0;
+            if (streamingMode !== "live" || !liveEdgeStartedClock) return activeMedia.duration;
+            const elapsed = Math.max(0, (performance.now() - liveEdgeStartedClock) / 1000);
+            return Math.min(activeMedia.duration, liveEdgeStartedAt + elapsed);
+        }
+
+        function keepPlaybackBehindLiveEdge() {
+            if (streamingMode !== "live" || !activeMedia) return;
+            const liveEdge = getLiveEdgeTime();
+            if (activeMedia.currentTime > liveEdge) activeMedia.currentTime = liveEdge;
+        }
+
+        function setStreamingMode(mode) {
+            streamingMode = mode === "live" ? "live" : "fast";
+            if (streamingMode === "live") {
+                liveEdgeStartedAt = Number(activeMedia?.currentTime) || 0;
+                liveEdgeStartedClock = performance.now();
+                if (activeMedia) activeMedia.playbackRate = 1;
+                speedIndex = speeds.indexOf(1);
+            } else {
+                liveEdgeStartedAt = 0;
+                liveEdgeStartedClock = 0;
+            }
+            streamModeToggle.textContent = streamingMode === "live" ? "Live Streaming" : "Fast Streaming";
+            streamModeToggle.classList.toggle("is-live", streamingMode === "live");
+            streamModeToggle.setAttribute("aria-pressed", String(streamingMode === "live"));
+            streamModeToggle.setAttribute("aria-label", streamingMode === "live"
+                ? "Switch to Fast Streaming"
+                : "Switch to Live Streaming");
+            speedToggle.disabled = streamingMode === "live";
+            speedToggle.title = streamingMode === "live" ? "Live Streaming is fixed at 1x" : "Change playback speed";
+            revealPlayerControls(1000);
         }
 
         function changeVolume(amount) {
@@ -1488,7 +1560,11 @@
         });
         progressBar.oninput = () => {
             if (activeMedia && Number.isFinite(activeMedia.duration)) {
-                activeMedia.currentTime = activeMedia.duration * (Number(progressBar.value) / 1000);
+                const requestedTime = activeMedia.duration * (Number(progressBar.value) / 1000);
+                activeMedia.currentTime = Math.min(
+                    requestedTime,
+                    streamingMode === "live" ? getLiveEdgeTime() : activeMedia.duration
+                );
                 savePlaybackPosition();
             }
         };
@@ -1504,10 +1580,14 @@
             updatePlayerUi();
         };
         speedToggle.onclick = () => {
-            if (!activeMedia) return;
+            if (!activeMedia || streamingMode === "live") return;
             speedIndex = (speedIndex + 1) % speeds.length;
             activeMedia.playbackRate = speeds[speedIndex];
             speedToggle.textContent = `${speeds[speedIndex]}x`;
+        };
+        streamModeToggle.onclick = (event) => {
+            event.stopPropagation();
+            setStreamingMode(streamingMode === "live" ? "fast" : "live");
         };
         fullscreenToggle.onclick = async () => {
             if (document.fullscreenElement) {
