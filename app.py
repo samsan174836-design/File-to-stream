@@ -3,12 +3,15 @@
 import os
 import asyncio
 import secrets
+import time
 import traceback
 import uvicorn
 import re
 import logging
 from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
+from html import escape
+from urllib.parse import quote
 
 from pyrogram import Client, filters, enums
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, ChatMemberUpdated
@@ -139,6 +142,7 @@ bot = Client("SimpleStreamBot", api_id=Config.API_ID, api_hash=Config.API_HASH, 
 multi_clients = {}; work_loads = {}; class_cache = {}
 bot_ready = False
 startup_error = None
+recent_uploads = {}
 
 # =====================================================================================
 # --- MULTI-CLIENT LOGIC ---
@@ -269,9 +273,19 @@ async def handle_file_upload(message: Message, user_id: int):
     unique_id = secrets.token_urlsafe(8)
     source_chat_id = message.chat.id if message.chat else user_id
     source_message_id = message.id
+    source_key = f"{source_chat_id}:{source_message_id}"
+    now = time.monotonic()
+    for key, seen_at in list(recent_uploads.items()):
+        if now - seen_at > 3600:
+            recent_uploads.pop(key, None)
+    if source_key in recent_uploads:
+        print(f"Duplicate upload update ignored in process: {source_key}")
+        return
+    recent_uploads[source_key] = now
+    reply_attempted = False
 
     try:
-        reserved, existing = await db.reserve_link(
+        reserved, _existing = await db.reserve_link(
             unique_id, source_chat_id, source_message_id
         )
         if not reserved:
@@ -283,14 +297,58 @@ async def handle_file_upload(message: Message, user_id: int):
 
         sent_message = await message.copy(chat_id=Config.STORAGE_CHANNEL)
         await db.complete_link(unique_id, sent_message.id)
-        
-        verify_link = f"https://t.me/{Config.BOT_USERNAME}?start=verify_{unique_id}"
-        button = InlineKeyboardMarkup([[InlineKeyboardButton("Get Link Now", url=verify_link)]])
-        
-        await message.reply_text("__✅ File Uploaded!__", reply_markup=button, quote=True)
+
+        media = message.document or message.video or message.audio
+        original_name = media.file_name or "file"
+        safe_name = "".join(
+            character
+            for character in original_name
+            if character.isalnum() or character in (" ", ".", "_", "-")
+        ).strip() or "file"
+        encoded_name = quote(safe_name, safe="")
+        download_link = f"{Config.BASE_URL}/dl/{sent_message.id}/{encoded_name}"
+        stream_link = f"{Config.BASE_URL}/show/{unique_id}"
+        display_name = escape(original_name)
+        escaped_download_link = escape(download_link, quote=True)
+        escaped_stream_link = escape(stream_link, quote=True)
+
+        reply_text = (
+            "✅ <b>Your Links Are Ready!</b>\n\n"
+            f"📁 <b>File:</b> {display_name}\n\n"
+            f"📊 <b>Size:</b> {get_readable_file_size(media.file_size)}\n\n"
+            f"📥 <b>Download Link:</b> "
+            f'<a href="{escaped_download_link}">{escaped_download_link}</a>\n\n'
+            f"🎬 <b>Stream Link:</b> "
+            f'<a href="{escaped_stream_link}">{escaped_stream_link}</a>\n\n'
+            "⏳ <i>This link is permanent while the file remains available.</i>"
+        )
+        button = InlineKeyboardMarkup(
+            [[
+                InlineKeyboardButton("🎬 Stream", url=stream_link),
+                InlineKeyboardButton("📥 Download", url=download_link),
+            ]]
+        )
+
+        reply_attempted = True
+        await message.reply_text(
+            reply_text,
+            reply_markup=button,
+            quote=True,
+            disable_web_page_preview=True,
+            parse_mode=enums.ParseMode.HTML,
+        )
     except Exception as e:
         await db.release_link(unique_id)
-        print(f"!!! ERROR: {traceback.format_exc()}"); await message.reply_text("Sorry, something went wrong.")
+        print(f"!!! ERROR: {traceback.format_exc()}")
+        if not reply_attempted:
+            recent_uploads.pop(source_key, None)
+            try:
+                await message.reply_text(
+                    "Sorry, something went wrong while creating your links.",
+                    quote=True,
+                )
+            except Exception:
+                print(f"!!! ERROR: Failed to send upload error reply: {traceback.format_exc()}")
 
 @bot.on_message(filters.private & (filters.document | filters.video | filters.audio))
 async def file_handler(_, message: Message):
