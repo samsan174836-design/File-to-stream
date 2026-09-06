@@ -628,6 +628,7 @@
         let activeMedia = null;
         let speedIndex = 1;
         const speeds = [0.75, 1, 1.25, 1.5, 2];
+        const playbackStorageKey = `karva-bhaiya:playback-position:${fileId}`;
 
         const setText = (id, value) => {
             document.getElementById(id).textContent = value || "";
@@ -679,6 +680,32 @@
             }
         }
 
+        function savePlaybackPosition() {
+            if (!activeMedia || !Number.isFinite(activeMedia.duration) || activeMedia.duration <= 0) return;
+            try {
+                if (activeMedia.ended || activeMedia.currentTime >= activeMedia.duration - 1) {
+                    localStorage.removeItem(playbackStorageKey);
+                } else {
+                    localStorage.setItem(playbackStorageKey, String(activeMedia.currentTime));
+                }
+            } catch {
+                // Playback should continue even if browser storage is unavailable.
+            }
+        }
+
+        function restorePlaybackPosition() {
+            if (!activeMedia || !Number.isFinite(activeMedia.duration)) return;
+            try {
+                const savedPosition = Number(localStorage.getItem(playbackStorageKey));
+                if (Number.isFinite(savedPosition) && savedPosition > 0
+                    && savedPosition < activeMedia.duration - 1) {
+                    activeMedia.currentTime = Math.min(savedPosition, activeMedia.duration);
+                }
+            } catch {
+                // Ignore storage errors and start from the beginning.
+            }
+        }
+
         function seekBy(seconds) {
             if (!activeMedia || !Number.isFinite(activeMedia.duration)) return;
             const nextTime = Math.min(
@@ -686,6 +713,7 @@
                 activeMedia.duration
             );
             activeMedia.currentTime = nextTime;
+            savePlaybackPosition();
             updatePlayerUi();
         }
 
@@ -694,6 +722,10 @@
             media.volume = Number(volumeBar.value);
             customControls.hidden = false;
             bigPlay.hidden = false;
+            media.addEventListener("loadedmetadata", restorePlaybackPosition);
+            media.addEventListener("timeupdate", savePlaybackPosition);
+            media.addEventListener("pause", savePlaybackPosition);
+            media.addEventListener("ended", savePlaybackPosition);
             ["loadedmetadata", "durationchange", "timeupdate", "play", "pause", "ended", "volumechange"]
                 .forEach((eventName) => media.addEventListener(eventName, updatePlayerUi));
             updatePlayerUi();
@@ -718,6 +750,7 @@
         progressBar.oninput = () => {
             if (activeMedia && Number.isFinite(activeMedia.duration)) {
                 activeMedia.currentTime = activeMedia.duration * (Number(progressBar.value) / 1000);
+                savePlaybackPosition();
             }
         };
         muteToggle.onclick = () => {
@@ -746,6 +779,7 @@
                 activeMedia.webkitEnterFullscreen();
             }
         };
+        window.addEventListener("pagehide", savePlaybackPosition);
 
         async function loadFile() {
             try {
