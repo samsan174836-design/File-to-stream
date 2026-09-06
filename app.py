@@ -85,6 +85,19 @@ async def lifespan(app: FastAPI):
         multi_clients.clear()
         work_loads.clear()
         print(f"!!! BOT STARTUP BLOCKED: {startup_error}")
+    except ValueError as e:
+        if "Peer id invalid" in str(e):
+            startup_error = (
+                f"STORAGE_CHANNEL={Config.STORAGE_CHANNEL} is not a valid "
+                "Pyrogram channel ID. Use the exact -100... ID, or use "
+                "@public_channel_username instead."
+            )
+            print(f"!!! STORAGE CHANNEL CONFIGURATION ERROR: {startup_error}")
+        else:
+            startup_error = "Bot startup failed because of an invalid configuration value."
+            print(f"!!! BOT STARTUP FAILED: {traceback.format_exc()}")
+        multi_clients.clear()
+        work_loads.clear()
     except Exception as e:
         startup_error = "Bot startup failed. Check the Heroku logs for the Telegram error."
         multi_clients.clear()
@@ -253,16 +266,30 @@ __Just Send Or Forward Any File To Me And I will instantly give you a special li
         await message.reply_text(reply_text)
 
 async def handle_file_upload(message: Message, user_id: int):
+    unique_id = secrets.token_urlsafe(8)
+    source_chat_id = message.chat.id if message.chat else user_id
+    source_message_id = message.id
+
     try:
+        reserved, existing = await db.reserve_link(
+            unique_id, source_chat_id, source_message_id
+        )
+        if not reserved:
+            print(
+                f"Duplicate upload update ignored: "
+                f"{source_chat_id}/{source_message_id}"
+            )
+            return
+
         sent_message = await message.copy(chat_id=Config.STORAGE_CHANNEL)
-        unique_id = secrets.token_urlsafe(8)
-        await db.save_link(unique_id, sent_message.id)
+        await db.complete_link(unique_id, sent_message.id)
         
         verify_link = f"https://t.me/{Config.BOT_USERNAME}?start=verify_{unique_id}"
         button = InlineKeyboardMarkup([[InlineKeyboardButton("Get Link Now", url=verify_link)]])
         
         await message.reply_text("__✅ File Uploaded!__", reply_markup=button, quote=True)
     except Exception as e:
+        await db.release_link(unique_id)
         print(f"!!! ERROR: {traceback.format_exc()}"); await message.reply_text("Sorry, something went wrong.")
 
 @bot.on_message(filters.private & (filters.document | filters.video | filters.audio))
