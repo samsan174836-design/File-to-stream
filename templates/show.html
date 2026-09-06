@@ -706,8 +706,8 @@
             width: 6px;
             height: 6px;
             border-radius: 50%;
-            background: #55d887;
-            box-shadow: 0 0 0 3px rgba(85, 216, 135, .14);
+            background: #f04d55;
+            box-shadow: 0 0 0 3px rgba(240, 77, 85, .18), 0 0 10px rgba(240, 77, 85, .7);
             content: "";
         }
 
@@ -748,6 +748,10 @@
             transition: opacity .35s ease;
         }
 
+        .player-overlay-top {
+            transition: opacity .35s ease;
+        }
+
         .player-card:fullscreen {
             width: 100vw;
             height: 100vh;
@@ -762,6 +766,10 @@
         .player-card.controls-hidden .custom-controls {
             opacity: 0;
             pointer-events: none;
+        }
+
+        .player-card.controls-hidden .player-overlay-top {
+            opacity: 0;
         }
 
         .progress-bar {
@@ -1093,7 +1101,7 @@
 
         <section class="player-card" id="player-card">
             <div class="player-overlay-top" aria-hidden="true">
-                <span class="player-badge">Secure stream</span>
+                <span class="player-badge">Live Streaming</span>
                 <span class="player-shortcut">Your Karva Bhaiya</span>
             </div>
             <div class="completion-state" id="completion-state" hidden>
@@ -1249,13 +1257,9 @@
             progressBar.value = duration ? String(Math.round((current / duration) * 1000)) : "0";
             timeLabel.textContent = `${formatTime(current)} / ${formatTime(duration)}`;
             const playing = !activeMedia.paused && !activeMedia.ended;
-            if (document.fullscreenElement) {
-                if (playing) {
-                    revealFullscreenControls();
-                } else {
-                    clearControlsHideTimer();
-                    playerCard.classList.remove("controls-hidden");
-                }
+            if (!playing) {
+                clearControlsHideTimer();
+                playerCard.classList.remove("controls-hidden");
             }
             playToggle.textContent = playing ? "❚❚" : "▶";
             bigPlay.textContent = playing ? "❚❚" : "▶";
@@ -1394,7 +1398,7 @@
             }
         }
 
-        function revealFullscreenControls() {
+        function revealPlayerControls(hideDelay = 3500) {
             playerCard.classList.remove("controls-hidden");
             clearControlsHideTimer();
             if (document.fullscreenElement && activeMedia && !activeMedia.paused) {
@@ -1402,7 +1406,13 @@
                     if (document.fullscreenElement && activeMedia && !activeMedia.paused) {
                         playerCard.classList.add("controls-hidden");
                     }
-                }, 3500);
+                }, hideDelay);
+            } else if (activeMedia && !activeMedia.paused) {
+                controlsHideTimer = setTimeout(() => {
+                    if (activeMedia && !activeMedia.paused) {
+                        playerCard.classList.add("controls-hidden");
+                    }
+                }, hideDelay);
             }
         }
 
@@ -1424,7 +1434,7 @@
         playToggle.onclick = startPlayback;
         bigPlay.onclick = startPlayback;
         document.addEventListener("keydown", (event) => {
-            if (document.fullscreenElement) revealFullscreenControls();
+            revealPlayerControls();
             if (!activeMedia || ![" ", "Spacebar", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
 
             const target = event.target;
@@ -1445,7 +1455,7 @@
             if (event.key === "ArrowDown") changeVolume(-.05);
         });
         ["mousemove", "mousedown", "touchstart"].forEach((eventName) => {
-            playerCard.addEventListener(eventName, revealFullscreenControls, { passive: true });
+            playerCard.addEventListener(eventName, () => revealPlayerControls(), { passive: true });
         });
         playerCard.addEventListener("touchend", (event) => {
             const target = event.target;
@@ -1457,6 +1467,7 @@
             const isDoubleTap = now - lastTouchTapAt < 420
                 && Math.abs(touch.clientX - lastTouchTapX) < Math.max(70, bounds.width * .16);
             suppressTouchClickUntil = now + 500;
+            revealPlayerControls(1000);
             if (isDoubleTap) {
                 event.preventDefault();
                 seekBy(touch.clientX < bounds.left + bounds.width / 2 ? -10 : 10);
@@ -1467,10 +1478,13 @@
             lastTouchTapX = touch.clientX;
         }, { passive: false });
         playerCard.addEventListener("click", (event) => {
-            if (!activeMedia || (event.target !== video && event.target !== playerCard)) return;
+            if (!activeMedia) return;
             if (Date.now() < suppressTouchClickUntil) return;
-            const bounds = playerCard.getBoundingClientRect();
-            seekBy(event.clientX < bounds.left + bounds.width / 2 ? -10 : 10);
+            if (event.target === video || event.target === playerCard) {
+                const bounds = playerCard.getBoundingClientRect();
+                seekBy(event.clientX < bounds.left + bounds.width / 2 ? -10 : 10);
+            }
+            revealPlayerControls(1000);
         });
         progressBar.oninput = () => {
             if (activeMedia && Number.isFinite(activeMedia.duration)) {
@@ -1505,7 +1519,7 @@
             }
         };
         document.addEventListener("fullscreenchange", () => {
-            revealFullscreenControls();
+            revealPlayerControls();
         });
         restartPlayback.onclick = () => {
             if (!activeMedia) return;
