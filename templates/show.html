@@ -995,7 +995,7 @@
         <section class="player-card" id="player-card">
             <div class="player-overlay-top" aria-hidden="true">
                 <span class="player-badge">Secure stream</span>
-                <span class="player-shortcut">← / → &nbsp; 10 sec</span>
+                <span class="player-shortcut">← / → 10 sec &nbsp;•&nbsp; ↑ / ↓ volume</span>
             </div>
             <div class="player-loading" id="loader">Loading your file...</div>
             <video id="video-player" playsinline preload="metadata" tabindex="0" hidden></video>
@@ -1186,6 +1186,18 @@
             updatePlayerUi();
         }
 
+        function changeVolume(amount) {
+            if (!activeMedia) return;
+            const nextVolume = Math.min(
+                1,
+                Math.max(0, Number((activeMedia.volume + amount).toFixed(2)))
+            );
+            activeMedia.volume = nextVolume;
+            activeMedia.muted = nextVolume === 0;
+            volumeBar.value = String(nextVolume);
+            updatePlayerUi();
+        }
+
         function setupPlayer(media) {
             activeMedia = media;
             media.volume = Number(volumeBar.value);
@@ -1203,18 +1215,25 @@
         playToggle.onclick = startPlayback;
         bigPlay.onclick = startPlayback;
         document.addEventListener("keydown", (event) => {
-            if (!activeMedia || !["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+            if (!activeMedia || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
 
             const target = event.target;
-            const isFormControl = target instanceof HTMLInputElement
-                || target instanceof HTMLTextAreaElement
+            const isTextEntry = target instanceof HTMLTextAreaElement
                 || target instanceof HTMLSelectElement
-                || target instanceof HTMLButtonElement
+                || (target instanceof HTMLInputElement && target.type !== "range")
                 || target.isContentEditable;
-            if (isFormControl) return;
+            if (isTextEntry) return;
 
             event.preventDefault();
-            seekBy(event.key === "ArrowRight" ? 10 : -10);
+            if (event.key === "ArrowRight") seekBy(10);
+            if (event.key === "ArrowLeft") seekBy(-10);
+            if (event.key === "ArrowUp") changeVolume(.05);
+            if (event.key === "ArrowDown") changeVolume(-.05);
+        });
+        playerCard.addEventListener("click", (event) => {
+            if (!activeMedia || (event.target !== video && event.target !== playerCard)) return;
+            const bounds = playerCard.getBoundingClientRect();
+            seekBy(event.clientX < bounds.left + bounds.width / 2 ? -10 : 10);
         });
         progressBar.oninput = () => {
             if (activeMedia && Number.isFinite(activeMedia.duration)) {
