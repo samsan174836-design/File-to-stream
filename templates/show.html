@@ -529,8 +529,8 @@
     <main class="page">
         <section class="player-card" id="player-card">
             <div class="player-loading" id="loader">Loading your file...</div>
-            <video id="video-player" playsinline preload="metadata" hidden></video>
-            <audio id="audio-player" preload="metadata" hidden></audio>
+            <video id="video-player" playsinline preload="metadata" tabindex="0" hidden></video>
+            <audio id="audio-player" preload="metadata" tabindex="0" hidden></audio>
             <button class="big-play" id="big-play" aria-label="Play video" hidden>▶</button>
             <div class="custom-controls" id="custom-controls" hidden>
                 <input class="progress-bar" id="progress-bar" type="range" min="0" max="1000" value="0" aria-label="Video progress">
@@ -679,6 +679,16 @@
             }
         }
 
+        function seekBy(seconds) {
+            if (!activeMedia || !Number.isFinite(activeMedia.duration)) return;
+            const nextTime = Math.min(
+                Math.max(activeMedia.currentTime + seconds, 0),
+                activeMedia.duration
+            );
+            activeMedia.currentTime = nextTime;
+            updatePlayerUi();
+        }
+
         function setupPlayer(media) {
             activeMedia = media;
             media.volume = Number(volumeBar.value);
@@ -691,6 +701,20 @@
 
         playToggle.onclick = startPlayback;
         bigPlay.onclick = startPlayback;
+        document.addEventListener("keydown", (event) => {
+            if (!activeMedia || !["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+
+            const target = event.target;
+            const isFormControl = target instanceof HTMLInputElement
+                || target instanceof HTMLTextAreaElement
+                || target instanceof HTMLSelectElement
+                || target instanceof HTMLButtonElement
+                || target.isContentEditable;
+            if (isFormControl) return;
+
+            event.preventDefault();
+            seekBy(event.key === "ArrowRight" ? 10 : -10);
+        });
         progressBar.oninput = () => {
             if (activeMedia && Number.isFinite(activeMedia.duration)) {
                 activeMedia.currentTime = activeMedia.duration * (Number(progressBar.value) / 1000);
