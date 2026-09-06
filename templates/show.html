@@ -114,26 +114,77 @@
         }
 
         .file-heading {
-            margin: 17px 2px 13px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin: 0 0 20px;
+            padding-bottom: 18px;
+            border-bottom: 1px solid rgba(255, 255, 255, .07);
+        }
+
+        #content {
+            margin-top: 16px;
+            padding: 22px;
+            border: 1px solid rgba(255, 255, 255, .09);
+            border-radius: 18px;
+            background:
+                linear-gradient(145deg, rgba(22, 25, 35, .98), rgba(10, 12, 18, .98));
+            box-shadow: 0 22px 55px rgba(0, 0, 0, .24);
+        }
+
+        .file-icon {
+            display: grid;
+            width: 48px;
+            height: 48px;
+            flex: 0 0 auto;
+            place-items: center;
+            border: 1px solid rgba(36, 208, 194, .32);
+            border-radius: 14px;
+            color: #061b1a;
+            background: linear-gradient(145deg, #42e3d2, #0daaa2);
+            box-shadow: 0 10px 28px rgba(36, 208, 194, .18);
+            font-size: 19px;
+        }
+
+        .file-heading-copy {
+            min-width: 0;
+            flex: 1;
         }
 
         .file-heading h1 {
             overflow-wrap: anywhere;
-            margin: 0 0 9px;
+            margin: 0 0 10px;
             font-size: clamp(18px, 4vw, 23px);
             line-height: 1.2;
             letter-spacing: -.025em;
         }
 
-        .pills { display: flex; flex-wrap: wrap; gap: 8px; }
+        .file-subtitle {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            color: #737b8b;
+            font-size: 11px;
+        }
+
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--teal);
+            box-shadow: 0 0 10px var(--teal);
+        }
+
+        .pills { display: flex; flex-wrap: wrap; gap: 7px; }
 
         .pill {
-            padding: 5px 10px;
+            padding: 5px 9px;
             border-radius: 999px;
             color: #8de8de;
             background: rgba(15, 130, 126, .18);
             font-size: 11px;
             font-weight: 700;
+            letter-spacing: .03em;
         }
 
         .pill.size {
@@ -145,15 +196,22 @@
             display: grid;
             grid-template-columns: repeat(3, 1fr);
             gap: 8px;
-            margin-bottom: 12px;
+            margin-bottom: 22px;
         }
 
         .info-card {
             min-width: 0;
-            padding: 13px 12px;
-            border: 1px solid var(--line);
-            border-radius: 12px;
-            background: linear-gradient(135deg, rgba(25, 27, 37, .96), rgba(13, 14, 20, .96));
+            min-height: 76px;
+            padding: 14px 13px;
+            border: 1px solid rgba(255, 255, 255, .07);
+            border-radius: 13px;
+            background: rgba(255, 255, 255, .035);
+            transition: border-color .18s ease, background .18s ease;
+        }
+
+        .info-card:hover {
+            border-color: rgba(36, 208, 194, .24);
+            background: rgba(36, 208, 194, .055);
         }
 
         .info-label {
@@ -168,8 +226,8 @@
         .info-value {
             overflow: hidden;
             color: #eef1f7;
-            font-size: 12px;
-            font-weight: 700;
+            font-size: 13px;
+            font-weight: 800;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
@@ -193,12 +251,22 @@
         }
 
         .section-title {
-            margin: 19px 2px 9px;
-            color: #7e8492;
-            font-size: 10px;
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            margin: 0 2px 10px;
+            color: #9ca3b2;
+            font-size: 11px;
             font-weight: 800;
             letter-spacing: .1em;
             text-transform: uppercase;
+        }
+
+        .section-title::after {
+            height: 1px;
+            flex: 1;
+            content: "";
+            background: linear-gradient(90deg, rgba(255, 255, 255, .12), transparent);
         }
 
         .button-grid {
@@ -209,15 +277,15 @@
 
         .btn {
             display: flex;
-            min-height: 42px;
+            min-height: 46px;
             align-items: center;
             justify-content: center;
             gap: 7px;
-            padding: 9px 8px;
-            border: 1px solid var(--line);
-            border-radius: 10px;
+            padding: 10px 8px;
+            border: 1px solid rgba(255, 255, 255, .08);
+            border-radius: 11px;
             color: #ced2dc;
-            background: #11131b;
+            background: rgba(255, 255, 255, .045);
             cursor: pointer;
             font-size: 11px;
             font-weight: 700;
@@ -225,16 +293,22 @@
             transition: transform .18s ease, border-color .18s ease, background .18s ease;
         }
 
-        .btn:hover { transform: translateY(-1px); border-color: rgba(36, 208, 194, .38); }
+        .btn:hover {
+            transform: translateY(-2px);
+            border-color: rgba(36, 208, 194, .38);
+            background: rgba(36, 208, 194, .09);
+        }
         .btn.primary {
             color: #fff;
             border-color: transparent;
             background: linear-gradient(135deg, #ff8515, var(--orange-dark));
+            box-shadow: 0 10px 22px rgba(255, 122, 10, .14);
         }
         .btn.teal {
             color: #032622;
             border-color: transparent;
             background: linear-gradient(135deg, #34dfcd, #11afa8);
+            box-shadow: 0 10px 22px rgba(17, 175, 168, .14);
         }
         .btn.disabled { opacity: .45; pointer-events: none; }
 
@@ -242,14 +316,16 @@
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 8px;
-            margin-top: 19px;
+            margin-top: 16px;
         }
 
         .share-row {
             display: flex;
             justify-content: center;
             gap: 52px;
-            margin: 18px 0 1px;
+            margin: 15px 0 0;
+            padding-top: 13px;
+            border-top: 1px solid rgba(255, 255, 255, .06);
         }
 
         .text-action {
@@ -266,8 +342,8 @@
         }
 
         .disclaimer {
-            margin-top: 15px;
-            padding: 11px 12px;
+            margin-top: 16px;
+            padding: 12px 14px;
             border: 1px solid rgba(255, 180, 72, .12);
             border-radius: 10px;
             color: #777d8b;
@@ -289,7 +365,10 @@
             .topbar { height: 60px; padding: 0 16px; }
             .page { width: min(100% - 20px, 620px); margin-top: 18px; }
             .player-card { min-height: 205px; }
-            .info-card { padding: 11px 9px; }
+            #content { padding: 17px 13px; border-radius: 16px; }
+            .file-heading { gap: 11px; }
+            .file-icon { width: 42px; height: 42px; border-radius: 12px; }
+            .info-card { min-height: 70px; padding: 11px 9px; }
             .info-value { font-size: 11px; }
             .share-row { gap: 34px; }
         }
@@ -317,7 +396,14 @@
 
         <section id="content" hidden>
             <div class="file-heading">
-                <h1 id="file-name"></h1>
+                <div class="file-icon" aria-hidden="true">▶</div>
+                <div class="file-heading-copy">
+                    <h1 id="file-name"></h1>
+                    <div class="file-subtitle">
+                        <span class="status-dot"></span>
+                        Ready for secure playback
+                    </div>
+                </div>
                 <div class="pills">
                     <span class="pill" id="file-type">FILE</span>
                     <span class="pill size" id="file-size"></span>
