@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 from html import escape
 from urllib.parse import quote
+from zoneinfo import ZoneInfo
 
 from pyrogram import Client, filters, enums
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, ChatMemberUpdated
@@ -399,6 +400,65 @@ async def health_check():
             },
         )
     return {"status": "ok", "message": "Server is healthy and running!"}
+
+def _catalog_title(file_name: str) -> str:
+    """Keep the original filename visible while removing only its extension."""
+    return os.path.splitext(file_name or "Untitled video")[0].strip() or "Untitled video"
+
+def _catalog_category(file_name: str, mime_type: str) -> str:
+    name = (file_name or "").lower()
+    if any(word in name for word in ("lecture", "class", "lesson", "chapter", "course", "study")):
+        return "Learning"
+    if mime_type.startswith("audio/"):
+        return "Audio"
+    return "Entertainment"
+
+@app.get("/api/catalog", response_class=JSONResponse)
+async def get_catalog():
+    """Return the frontend-friendly catalog without changing individual file links."""
+    if not bot_ready:
+        return {"status": "starting", "videos": []}
+
+    main_bot = multi_clients.get(0)
+    if not main_bot:
+        return {"status": "starting", "videos": []}
+
+    videos = []
+    today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+    for link in await db.list_ready_links(limit=100):
+        unique_id = str(link.get("_id", ""))
+        message_id = link.get("message_id")
+        if not unique_id or not message_id:
+            continue
+        try:
+            message = await main_bot.get_messages(Config.STORAGE_CHANNEL, message_id)
+            media = message.document or message.video or message.audio
+            if not media:
+                continue
+            file_name = media.file_name or "Untitled video"
+            mime_type = media.mime_type or "application/octet-stream"
+            created_at = message.date.isoformat() if message.date else None
+            message_day = message.date.astimezone(ZoneInfo("Asia/Kolkata")).date() if message.date else None
+            duration = getattr(media, "duration", None)
+            videos.append({
+                "id": unique_id,
+                "title": _catalog_title(file_name),
+                "fileName": file_name,
+                "thumbnail": None,
+                "videoUrl": f"/show/{quote(unique_id)}",
+                "duration": duration,
+                "category": _catalog_category(file_name, mime_type),
+                "subject": None,
+                "lectureNumber": None,
+                "createdAt": created_at,
+                "isToday": message_day == today,
+                "mimeType": mime_type,
+                "fileSize": media.file_size,
+            })
+        except Exception:
+            logging.exception("Catalog item could not be loaded for link %s", unique_id)
+
+    return {"status": "ok", "videos": videos}
 
 @app.get("/show/{unique_id}", response_class=HTMLResponse)
 async def show_page(request: Request, unique_id: str):

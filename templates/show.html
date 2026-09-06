@@ -1206,9 +1206,11 @@
         let playbackCompleted = false;
         let speedIndex = 1;
         let controlsHideTimer = null;
+        let lastSharedStateSave = 0;
         const speeds = [0.75, 1, 1.25, 1.5, 2];
         const playbackStorageKey = `karva-bhaiya:playback-position:${fileId}`;
         const completionStorageKey = `karva-bhaiya:playback-complete:${fileId}`;
+        const libraryStateKey = "karva-bhaiya:library-state";
 
         const setText = (id, value) => {
             document.getElementById(id).textContent = value || "";
@@ -1290,7 +1292,42 @@
             } catch {
                 // Playback completion still works for the current page.
             }
+            syncSharedLibraryState(true);
             showCompletionState();
+        }
+
+        function syncSharedLibraryState(force = false) {
+            if (!activeMedia || !Number.isFinite(activeMedia.duration) || activeMedia.duration <= 0) return;
+            const now = Date.now();
+            if (!force && now - lastSharedStateSave < 1200) return;
+            lastSharedStateSave = now;
+            try {
+                const saved = JSON.parse(localStorage.getItem(libraryStateKey) || "{}");
+                const sharedState = {
+                    progress: saved.progress && typeof saved.progress === "object" ? saved.progress : {},
+                    completed: Array.isArray(saved.completed) ? saved.completed : [],
+                    later: Array.isArray(saved.later) ? saved.later : [],
+                    history: saved.history && typeof saved.history === "object" ? saved.history : {}
+                };
+                const currentTime = Number(activeMedia.currentTime) || 0;
+                const percentage = Math.max(0, Math.min(100, (currentTime / activeMedia.duration) * 100));
+                sharedState.history[fileId] = new Date().toISOString();
+                if (force || activeMedia.ended || currentTime >= activeMedia.duration - 1) {
+                    delete sharedState.progress[fileId];
+                    if (!sharedState.completed.includes(fileId)) sharedState.completed.unshift(fileId);
+                } else if (percentage > 0) {
+                    sharedState.progress[fileId] = {
+                        position: currentTime,
+                        duration: activeMedia.duration,
+                        percentage,
+                        updatedAt: new Date().toISOString()
+                    };
+                    sharedState.completed = sharedState.completed.filter((id) => id !== fileId);
+                }
+                localStorage.setItem(libraryStateKey, JSON.stringify(sharedState));
+            } catch {
+                // The existing per-video playback state remains the fallback.
+            }
         }
 
         function savePlaybackPosition() {
@@ -1304,6 +1341,7 @@
             } catch {
                 // Playback should continue even if browser storage is unavailable.
             }
+            syncSharedLibraryState();
         }
 
         function restorePlaybackPosition() {
@@ -1447,6 +1485,12 @@
             try {
                 localStorage.removeItem(completionStorageKey);
                 localStorage.removeItem(playbackStorageKey);
+                const saved = JSON.parse(localStorage.getItem(libraryStateKey) || "{}");
+                saved.completed = Array.isArray(saved.completed)
+                    ? saved.completed.filter((id) => id !== fileId)
+                    : [];
+                if (saved.progress && typeof saved.progress === "object") delete saved.progress[fileId];
+                localStorage.setItem(libraryStateKey, JSON.stringify(saved));
             } catch {
                 // The video can still be restarted for this session.
             }

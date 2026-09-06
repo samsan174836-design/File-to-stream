@@ -91,4 +91,15 @@ class Database:
             return doc.get('message_id') if doc else None
         return None
 
+    async def list_ready_links(self, limit=100):
+        """Return link records that can be shown in the browser catalog."""
+        if self.collection is None:
+            return []
+
+        cursor = self.collection.find(
+            {"message_id": {"$exists": True}},
+            {"_id": 1, "message_id": 1},
+        ).sort("_id", -1).limit(limit)
+        return await cursor.to_list(length=limit)
+
 db = Database()
