@@ -787,11 +787,12 @@
             right: 0;
             bottom: 7px;
             display: none;
-            padding: 2px 5px;
+            padding: 3px 7px;
             color: #fff;
-            background: rgba(112, 21, 28, .92);
+            background: transparent;
+            border: 1px solid transparent;
             border-radius: 4px;
-            font-size: 9px;
+            font-size: 11px;
             font-weight: 800;
             letter-spacing: .08em;
             line-height: 1;
@@ -802,8 +803,15 @@
             display: inline-flex;
         }
 
-        .player-card.live-mode .time-label {
-            display: none;
+        .player-card.live-mode.at-live-edge .live-edge-label {
+            color: #fff;
+            background: rgba(198, 39, 52, .94);
+            border-color: rgba(255, 115, 124, .65);
+            box-shadow: 0 0 10px rgba(240, 77, 85, .35);
+        }
+
+        .player-card.live-mode:not(.at-live-edge) .live-edge-label {
+            color: #fff;
         }
 
         .player-card:fullscreen {
@@ -811,6 +819,35 @@
             height: 100vh;
             aspect-ratio: auto;
             border-radius: 0;
+        }
+
+        .player-card:fullscreen video,
+        .player-card:-webkit-full-screen video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .player-card:fullscreen .custom-controls,
+        .player-card:-webkit-full-screen .custom-controls {
+            padding-bottom: calc(17px + env(safe-area-inset-bottom));
+        }
+
+        @media (max-width: 700px) {
+            .player-card:fullscreen,
+            .player-card:-webkit-full-screen {
+                width: 100vw !important;
+                height: 100dvh !important;
+                min-height: 100dvh !important;
+                max-height: 100dvh;
+                aspect-ratio: auto;
+                border-radius: 0;
+            }
+
+            .player-card:fullscreen .player-overlay-top,
+            .player-card:-webkit-full-screen .player-overlay-top {
+                top: max(12px, env(safe-area-inset-top));
+            }
         }
 
         .player-card.controls-hidden {
@@ -1285,6 +1322,9 @@
         let liveEdgeStartedAt = 0;
         let liveEdgeStartedClock = 0;
         let liveStateTimer = null;
+        let liveAutoResumeTimer = null;
+        const liveLagSeconds = 3;
+        const liveResumeDelayMs = 2000;
         const speeds = [0.75, 1, 1.25, 1.5, 2];
         const playbackStorageKey = `karva-bhaiya:playback-position:${fileId}`;
         const completionStorageKey = `karva-bhaiya:playback-complete:${fileId}`;
@@ -1324,10 +1364,12 @@
             const duration = Number.isFinite(activeMedia.duration) ? activeMedia.duration : 0;
             keepPlaybackBehindLiveEdge();
             const current = Number.isFinite(activeMedia.currentTime) ? activeMedia.currentTime : 0;
-            const progressEnd = streamingMode === "live" ? getLiveEdgeTime() : duration;
+            const progressEnd = streamingMode === "live" ? getLivePlaybackLimit() : duration;
             const progressValue = progressEnd > 0 ? Math.min(1, current / progressEnd) : 0;
             progressBar.value = String(Math.round(progressValue * 1000));
-            timeLabel.textContent = `${formatTime(current)} / ${formatTime(duration)}`;
+            timeLabel.textContent = streamingMode === "live"
+                ? `Watched ${formatTime(current)}`
+                : `${formatTime(current)} / ${formatTime(duration)}`;
             const playing = !activeMedia.paused && !activeMedia.ended;
             if (!playing) {
                 clearControlsHideTimer();
@@ -1343,6 +1385,9 @@
 
         function startPlayback() {
             if (!activeMedia || playbackCompleted) return;
+            if (liveAutoResumeTimer) {
+                clearLiveAutoResumeTimer();
+            }
             if (activeMedia.paused || activeMedia.ended) {
                 activeMedia.play().catch(() => {});
             } else {
@@ -1375,6 +1420,7 @@
                 // Playback completion still works for the current page.
             }
             syncSharedLibraryState(true);
+            clearLiveAutoResumeTimer();
             setStreamingMode("fast");
             showCompletionState();
         }
@@ -1446,7 +1492,7 @@
 
         function seekBy(seconds) {
             if (!activeMedia || !Number.isFinite(activeMedia.duration)) return;
-            const maximumTime = streamingMode === "live" ? getLiveEdgeTime() : activeMedia.duration;
+            const maximumTime = streamingMode === "live" ? getLivePlaybackLimit() : activeMedia.duration;
             const nextTime = Math.min(
                 Math.max(activeMedia.currentTime + seconds, 0),
                 maximumTime
@@ -1463,11 +1509,18 @@
             return Math.min(activeMedia.duration, liveEdgeStartedAt + elapsed);
         }
 
+        function getLivePlaybackLimit() {
+            if (!activeMedia || !Number.isFinite(activeMedia.duration)) return 0;
+            const liveEdge = getLiveEdgeTime();
+            if (liveEdge >= activeMedia.duration - .25) return activeMedia.duration;
+            return Math.max(0, liveEdge - liveLagSeconds);
+        }
+
         function isAtLiveEdge() {
             if (streamingMode !== "live" || !activeMedia || !Number.isFinite(activeMedia.duration)) return false;
-            const liveEdge = getLiveEdgeTime();
-            return liveEdge < activeMedia.duration
-                && Math.abs(liveEdge - activeMedia.currentTime) <= 2;
+            const playbackLimit = getLivePlaybackLimit();
+            return getLiveEdgeTime() < activeMedia.duration
+                && Math.abs(playbackLimit - activeMedia.currentTime) <= 2;
         }
 
         function updateStreamModeUi() {
@@ -1477,6 +1530,7 @@
             streamModeToggle.classList.toggle("is-live", liveMode);
             streamModeToggle.disabled = liveMode;
             playerCard.classList.toggle("live-mode", liveMode);
+            playerCard.classList.toggle("at-live-edge", liveMode && atLiveEdge);
             streamModeToggle.setAttribute("aria-pressed", String(streamingMode === "live"));
             streamModeToggle.setAttribute(
                 "aria-label",
@@ -1487,18 +1541,39 @@
                 : "Start Live Streaming";
         }
 
+        function clearLiveAutoResumeTimer() {
+            if (liveAutoResumeTimer) {
+                clearTimeout(liveAutoResumeTimer);
+                liveAutoResumeTimer = null;
+            }
+        }
+
+        function scheduleLiveAutoResume() {
+            clearLiveAutoResumeTimer();
+            liveAutoResumeTimer = window.setTimeout(() => {
+                liveAutoResumeTimer = null;
+                if (streamingMode !== "live" || !activeMedia || playbackCompleted || activeMedia.ended) return;
+                activeMedia.currentTime = getLivePlaybackLimit();
+                activeMedia.play().catch(() => {});
+            }, liveResumeDelayMs);
+        }
+
         function keepPlaybackBehindLiveEdge() {
             if (streamingMode !== "live" || !activeMedia) return;
-            const liveEdge = getLiveEdgeTime();
-            if (activeMedia.currentTime > liveEdge + .25) {
-                activeMedia.currentTime = liveEdge;
-                if (!activeMedia.paused && !activeMedia.ended) activeMedia.pause();
+            const playbackLimit = getLivePlaybackLimit();
+            if (activeMedia.currentTime > playbackLimit + .25) {
+                activeMedia.currentTime = playbackLimit;
+                if (!activeMedia.paused && !activeMedia.ended) {
+                    activeMedia.pause();
+                    scheduleLiveAutoResume();
+                }
             }
             updateStreamModeUi();
         }
 
         function setStreamingMode(mode) {
             streamingMode = mode === "live" ? "live" : "fast";
+            clearLiveAutoResumeTimer();
             if (streamingMode === "live") {
                 liveEdgeStartedAt = Number(activeMedia?.currentTime) || 0;
                 liveEdgeStartedClock = Date.now();
@@ -1662,14 +1737,15 @@
         progressBar.oninput = () => {
             if (activeMedia && Number.isFinite(activeMedia.duration)) {
                 const progressEnd = streamingMode === "live"
-                    ? getLiveEdgeTime()
+                    ? getLivePlaybackLimit()
                     : activeMedia.duration;
                 const requestedTime = progressEnd * (Number(progressBar.value) / 1000);
                 activeMedia.currentTime = Math.min(
                     requestedTime,
-                    streamingMode === "live" ? getLiveEdgeTime() : activeMedia.duration
+                    streamingMode === "live" ? getLivePlaybackLimit() : activeMedia.duration
                 );
                 savePlaybackPosition();
+                updatePlayerUi();
             }
         };
         muteToggle.onclick = () => {
