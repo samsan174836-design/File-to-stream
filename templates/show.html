@@ -1207,6 +1207,9 @@
         let speedIndex = 1;
         let controlsHideTimer = null;
         let lastSharedStateSave = 0;
+        let lastTouchTapAt = 0;
+        let lastTouchTapX = 0;
+        let suppressTouchClickUntil = 0;
         const speeds = [0.75, 1, 1.25, 1.5, 2];
         const playbackStorageKey = `karva-bhaiya:playback-position:${fileId}`;
         const completionStorageKey = `karva-bhaiya:playback-complete:${fileId}`;
@@ -1422,7 +1425,7 @@
         bigPlay.onclick = startPlayback;
         document.addEventListener("keydown", (event) => {
             if (document.fullscreenElement) revealFullscreenControls();
-            if (!activeMedia || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+            if (!activeMedia || ![" ", "Spacebar", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
 
             const target = event.target;
             const isTextEntry = target instanceof HTMLTextAreaElement
@@ -1432,6 +1435,10 @@
             if (isTextEntry) return;
 
             event.preventDefault();
+            if (event.key === " " || event.key === "Spacebar") {
+                startPlayback();
+                return;
+            }
             if (event.key === "ArrowRight") seekBy(10);
             if (event.key === "ArrowLeft") seekBy(-10);
             if (event.key === "ArrowUp") changeVolume(.05);
@@ -1440,8 +1447,28 @@
         ["mousemove", "mousedown", "touchstart"].forEach((eventName) => {
             playerCard.addEventListener(eventName, revealFullscreenControls, { passive: true });
         });
+        playerCard.addEventListener("touchend", (event) => {
+            const target = event.target;
+            if (target.closest("button, input, a, .custom-controls, .completion-state")) return;
+            const touch = event.changedTouches[0];
+            if (!touch) return;
+            const now = Date.now();
+            const bounds = playerCard.getBoundingClientRect();
+            const isDoubleTap = now - lastTouchTapAt < 420
+                && Math.abs(touch.clientX - lastTouchTapX) < Math.max(70, bounds.width * .16);
+            suppressTouchClickUntil = now + 500;
+            if (isDoubleTap) {
+                event.preventDefault();
+                seekBy(touch.clientX < bounds.left + bounds.width / 2 ? -10 : 10);
+                lastTouchTapAt = 0;
+                return;
+            }
+            lastTouchTapAt = now;
+            lastTouchTapX = touch.clientX;
+        }, { passive: false });
         playerCard.addEventListener("click", (event) => {
             if (!activeMedia || (event.target !== video && event.target !== playerCard)) return;
+            if (Date.now() < suppressTouchClickUntil) return;
             const bounds = playerCard.getBoundingClientRect();
             seekBy(event.clientX < bounds.left + bounds.width / 2 ? -10 : 10);
         });
