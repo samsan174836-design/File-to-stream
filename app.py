@@ -296,14 +296,41 @@ async def handle_file_upload(message: Message, user_id: int):
             )
             return
 
-        sent_message = await message.copy(chat_id=Config.STORAGE_CHANNEL)
-        await db.complete_link(unique_id, sent_message.id)
-
         media = message.document or message.video or message.audio
         original_name = media.file_name or "file"
         stream_link = f"{Config.BASE_URL}/show/{unique_id}"
         display_name = escape(original_name)
         escaped_stream_link = escape(stream_link, quote=True)
+        storage_button = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("🎬 Stream", url=stream_link)]]
+        )
+        stream_caption = (
+            f"🎬 <b>Stream Link:</b> "
+            f'<a href="{escaped_stream_link}">{escaped_stream_link}</a>'
+        )
+        original_caption = (message.caption or "").strip()
+        while True:
+            escaped_caption = escape(original_caption)
+            storage_caption = (
+                f"{escaped_caption}\n\n{stream_caption}"
+                if escaped_caption
+                else stream_caption
+            )
+            if len(storage_caption) <= 1024 or not original_caption:
+                break
+            original_caption = original_caption[:-64].rstrip()
+
+        sent_message = await message.copy(chat_id=Config.STORAGE_CHANNEL)
+        try:
+            await sent_message.edit_caption(
+                caption=storage_caption,
+                parse_mode=enums.ParseMode.HTML,
+                reply_markup=storage_button,
+            )
+        except Exception:
+            await sent_message.delete()
+            raise
+        await db.complete_link(unique_id, sent_message.id)
 
         reply_text = (
             "✅ <b>Your Links Are Ready!</b>\n\n"
@@ -313,16 +340,10 @@ async def handle_file_upload(message: Message, user_id: int):
             f'<a href="{escaped_stream_link}">{escaped_stream_link}</a>\n\n'
             "⏳ <i>This link is permanent while the file remains available.</i>"
         )
-        button = InlineKeyboardMarkup(
-            [[
-                InlineKeyboardButton("🎬 Stream", url=stream_link),
-            ]]
-        )
-
         reply_attempted = True
         await message.reply_text(
             reply_text,
-            reply_markup=button,
+            reply_markup=storage_button,
             quote=True,
             disable_web_page_preview=True,
             parse_mode=enums.ParseMode.HTML,
@@ -539,7 +560,7 @@ async def stream_media(r:Request,mid:int,fname:str):
         # every source chunk touched by the requested byte range.
         pc=math.ceil((ub-off+1)/cs)
         body=tc.yield_file(fid,client_id,off,fc,lc,pc,cs);sc=206 if rh else 200
-        hdrs={"Content-Type":m.mime_type or "application/octet-stream","Accept-Ranges":"bytes","Content-Disposition":f'inline; filename="{m.file_name}"',"Content-Length":str(rl)}
+        hdrs={"Content-Type":m.mime_type or "application/octet-stream","Accept-Ranges":"bytes","Cache-Control":"public, max-age=3600, immutable","Content-Disposition":f'inline; filename="{m.file_name}"',"Content-Length":str(rl),"X-Content-Type-Options":"nosniff"}
         if rh:hdrs["Content-Range"]=f"bytes {fb}-{ub}/{fsize}"
         return StreamingResponse(body,status_code=sc,headers=hdrs)
     except FileNotFoundError:raise HTTPException(404)

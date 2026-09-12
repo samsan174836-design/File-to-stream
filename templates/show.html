@@ -780,6 +780,7 @@
 
         .progress-track {
             position: relative;
+            line-height: 0;
         }
 
         .live-edge-label {
@@ -869,8 +870,59 @@
         }
 
         .progress-bar {
+            position: relative;
+            z-index: 1;
             height: 5px;
+            appearance: none;
+            background: transparent;
             accent-color: #5bd88a;
+        }
+
+        .progress-buffer {
+            position: absolute;
+            top: 50%;
+            right: 0;
+            left: 0;
+            height: 5px;
+            border-radius: 99px;
+            background: linear-gradient(
+                to right,
+                #5bd88a 0 var(--played, 0%),
+                #b7edc5 var(--played, 0%) var(--buffered, 0%),
+                rgba(255, 255, 255, .22) var(--buffered, 0%) 100%
+            );
+            pointer-events: none;
+            transform: translateY(-50%);
+        }
+
+        .progress-bar::-webkit-slider-runnable-track {
+            height: 5px;
+            background: transparent;
+        }
+
+        .progress-bar::-moz-range-track {
+            height: 5px;
+            background: transparent;
+        }
+
+        .progress-bar::-webkit-slider-thumb {
+            width: 13px;
+            height: 13px;
+            margin-top: -4px;
+            appearance: none;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            background: #16834c;
+            box-shadow: 0 1px 5px rgba(0, 0, 0, .28);
+        }
+
+        .progress-bar::-moz-range-thumb {
+            width: 10px;
+            height: 10px;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            background: #16834c;
+            box-shadow: 0 1px 5px rgba(0, 0, 0, .28);
         }
 
         .control-row {
@@ -1213,11 +1265,12 @@
                 <button class="restart-playback" id="restart-playback" type="button">Restart</button>
             </div>
             <div class="player-loading" id="loader">Loading your file...</div>
-            <video id="video-player" playsinline preload="metadata" tabindex="0" hidden></video>
-            <audio id="audio-player" preload="metadata" tabindex="0" hidden></audio>
+            <video id="video-player" playsinline preload="auto" tabindex="0" hidden></video>
+            <audio id="audio-player" preload="auto" tabindex="0" hidden></audio>
             <button class="big-play" id="big-play" aria-label="Play video" hidden>▶</button>
             <div class="custom-controls" id="custom-controls" hidden>
                 <div class="progress-track">
+                    <div class="progress-buffer" id="progress-buffer" aria-hidden="true"></div>
                     <input class="progress-bar" id="progress-bar" type="range" min="0" max="1000" value="0" aria-label="Video progress">
                     <span class="live-edge-label" id="live-edge-label" aria-hidden="true">LIVE</span>
                 </div>
@@ -1306,6 +1359,7 @@
         const customControls = document.getElementById("custom-controls");
         const playToggle = document.getElementById("play-toggle");
         const progressBar = document.getElementById("progress-bar");
+        const progressBuffer = document.getElementById("progress-buffer");
         const timeLabel = document.getElementById("time-label");
         const muteToggle = document.getElementById("mute-toggle");
         const volumeBar = document.getElementById("volume-bar");
@@ -1372,9 +1426,23 @@
             const progressEnd = streamingMode === "live" ? getLivePlaybackLimit() : duration;
             const progressValue = progressEnd > 0 ? Math.min(1, current / progressEnd) : 0;
             progressBar.value = String(Math.round(progressValue * 1000));
-            timeLabel.textContent = streamingMode === "live"
-                ? `Watched ${formatTime(current)}`
-                : `${formatTime(current)} / ${formatTime(duration)}`;
+            let bufferedEnd = 0;
+            try {
+                if (activeMedia.buffered.length) {
+                    bufferedEnd = activeMedia.buffered.end(activeMedia.buffered.length - 1);
+                }
+            } catch {
+                bufferedEnd = 0;
+            }
+            const playedPercentage = duration > 0
+                ? Math.min(100, Math.max(0, (current / duration) * 100))
+                : 0;
+            const bufferedPercentage = duration > 0
+                ? Math.min(100, Math.max(playedPercentage, (bufferedEnd / duration) * 100))
+                : 0;
+            progressBuffer.style.setProperty("--played", `${playedPercentage}%`);
+            progressBuffer.style.setProperty("--buffered", `${bufferedPercentage}%`);
+            timeLabel.textContent = `${formatTime(current)} / ${formatTime(duration)}`;
             const playing = !activeMedia.paused && !activeMedia.ended;
             if (!playing) {
                 clearControlsHideTimer();
@@ -1706,7 +1774,7 @@
             media.addEventListener("pause", savePlaybackPosition);
             media.addEventListener("ended", savePlaybackPosition);
             media.addEventListener("ended", markPlaybackComplete);
-            ["loadedmetadata", "durationchange", "timeupdate", "play", "pause", "ended", "volumechange"]
+            ["loadedmetadata", "durationchange", "progress", "canplay", "loadeddata", "timeupdate", "play", "pause", "ended", "volumechange"]
                 .forEach((eventName) => media.addEventListener(eventName, updatePlayerUi));
             liveStateTimer = window.setInterval(() => {
                 if (!activeMedia || streamingMode !== "live") return;
