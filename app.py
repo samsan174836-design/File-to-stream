@@ -144,6 +144,8 @@ multi_clients = {}; work_loads = {}; class_cache = {}
 bot_ready = False
 startup_error = None
 recent_uploads = {}
+upload_lock = asyncio.Lock()
+upload_delay_seconds = float(os.environ.get("UPLOAD_DELAY_SECONDS", "1.5"))
 
 # =====================================================================================
 # --- MULTI-CLIENT LOGIC ---
@@ -224,6 +226,19 @@ def mask_filename(name: str):
         metadata_part = ""
     masked_title = ''.join(c if (i % 3 == 0 and c.isalnum()) else ('*' if c.isalnum() else c) for i, c in enumerate(title_part))
     return f"{masked_title} {metadata_part}{ext}".strip()
+
+async def telegram_call_with_retry(operation, operation_name):
+    """Retry Telegram operations when the API asks us to wait."""
+    while True:
+        try:
+            return await operation()
+        except FloodWait as error:
+            wait_seconds = error.value + 1
+            print(
+                f"Telegram FloodWait during {operation_name}; "
+                f"retrying in {wait_seconds}s."
+            )
+            await asyncio.sleep(wait_seconds)
 
 # =====================================================================================
 # --- PYROGRAM BOT HANDLERS ---
@@ -320,34 +335,45 @@ async def handle_file_upload(message: Message, user_id: int):
                 break
             original_caption = original_caption[:-64].rstrip()
 
-        sent_message = await message.copy(chat_id=Config.STORAGE_CHANNEL)
-        try:
-            await sent_message.edit_caption(
-                caption=storage_caption,
-                parse_mode=enums.ParseMode.HTML,
-                reply_markup=storage_button,
+        async with upload_lock:
+            sent_message = await telegram_call_with_retry(
+                lambda: message.copy(chat_id=Config.STORAGE_CHANNEL),
+                "copying upload to storage",
             )
-        except Exception:
-            await sent_message.delete()
-            raise
-        await db.complete_link(unique_id, sent_message.id)
+            try:
+                await telegram_call_with_retry(
+                    lambda: sent_message.edit_caption(
+                        caption=storage_caption,
+                        parse_mode=enums.ParseMode.HTML,
+                        reply_markup=storage_button,
+                    ),
+                    "updating storage caption",
+                )
+            except Exception:
+                await sent_message.delete()
+                raise
+            await db.complete_link(unique_id, sent_message.id)
 
-        reply_text = (
-            "✅ <b>Your Links Are Ready!</b>\n\n"
-            f"📁 <b>File:</b> {display_name}\n\n"
-            f"📊 <b>Size:</b> {get_readable_file_size(media.file_size)}\n\n"
-            f"🎬 <b>Stream Link:</b> "
-            f'<a href="{escaped_stream_link}">{escaped_stream_link}</a>\n\n'
-            "⏳ <i>This link is permanent while the file remains available.</i>"
-        )
-        reply_attempted = True
-        await message.reply_text(
-            reply_text,
-            reply_markup=storage_button,
-            quote=True,
-            disable_web_page_preview=True,
-            parse_mode=enums.ParseMode.HTML,
-        )
+            reply_text = (
+                "✅ <b>Your Links Are Ready!</b>\n\n"
+                f"📁 <b>File:</b> {display_name}\n\n"
+                f"📊 <b>Size:</b> {get_readable_file_size(media.file_size)}\n\n"
+                f"🎬 <b>Stream Link:</b> "
+                f'<a href="{escaped_stream_link}">{escaped_stream_link}</a>\n\n'
+                "⏳ <i>This link is permanent while the file remains available.</i>"
+            )
+            reply_attempted = True
+            await telegram_call_with_retry(
+                lambda: message.reply_text(
+                    reply_text,
+                    reply_markup=storage_button,
+                    quote=True,
+                    disable_web_page_preview=True,
+                    parse_mode=enums.ParseMode.HTML,
+                ),
+                "sending upload link",
+            )
+            await asyncio.sleep(upload_delay_seconds)
     except Exception as e:
         await db.release_link(unique_id)
         print(f"!!! ERROR: {traceback.format_exc()}")
