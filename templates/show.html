@@ -106,6 +106,134 @@
             pointer-events: none;
         }
 
+        .music-visualizer {
+            display: grid;
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+            place-items: center;
+            align-content: center;
+            gap: 13px;
+            overflow: hidden;
+            color: #effff4;
+            background:
+                radial-gradient(circle at 50% 42%, rgba(55, 195, 116, .24), transparent 11rem),
+                linear-gradient(145deg, #071a10, #030906 78%);
+            text-align: center;
+        }
+
+        .music-visualizer::before,
+        .music-visualizer::after {
+            position: absolute;
+            width: 270px;
+            height: 270px;
+            border: 1px solid rgba(117, 232, 155, .16);
+            border-radius: 50%;
+            content: "";
+            animation: music-pulse 3.2s ease-out infinite;
+        }
+
+        .music-visualizer::after {
+            width: 390px;
+            height: 390px;
+            border-color: rgba(117, 232, 155, .08);
+            animation-delay: 1.2s;
+        }
+
+        @keyframes music-pulse {
+            0%, 100% { opacity: .25; transform: scale(.86); }
+            50% { opacity: .8; transform: scale(1); }
+        }
+
+        .music-disc {
+            display: grid;
+            position: relative;
+            z-index: 1;
+            width: 84px;
+            height: 84px;
+            place-items: center;
+            border: 1px solid rgba(196, 255, 211, .62);
+            border-radius: 50%;
+            color: #0b2d19;
+            background: linear-gradient(145deg, #b8f6c9, #39b96c);
+            box-shadow: 0 0 0 10px rgba(68, 207, 116, .08), 0 15px 45px rgba(0, 0, 0, .36);
+            font-size: 35px;
+        }
+
+        .music-bars {
+            display: flex;
+            position: relative;
+            z-index: 1;
+            height: 28px;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .music-bars span {
+            display: block;
+            width: 4px;
+            height: 8px;
+            border-radius: 99px;
+            background: #79e99d;
+            opacity: .72;
+        }
+
+        .player-card.audio-mode.is-playing .music-bars span {
+            animation: music-bars 1s ease-in-out infinite alternate;
+        }
+
+        .player-card.audio-mode.audio-paused .music-bars span {
+            opacity: .42;
+        }
+
+        .music-bars span:nth-child(2) { animation-delay: -.2s; }
+        .music-bars span:nth-child(3) { animation-delay: -.45s; }
+        .music-bars span:nth-child(4) { animation-delay: -.7s; }
+        .music-bars span:nth-child(5) { animation-delay: -.35s; }
+        .music-bars span:nth-child(6) { animation-delay: -.15s; }
+
+        @keyframes music-bars {
+            from { height: 7px; transform: scaleY(.7); }
+            to { height: 27px; transform: scaleY(1); }
+        }
+
+        .music-visualizer strong,
+        .music-visualizer small {
+            position: relative;
+            z-index: 1;
+        }
+
+        .music-visualizer strong {
+            color: #f3fff6;
+            font-size: 14px;
+            letter-spacing: .01em;
+        }
+
+        .music-visualizer small {
+            max-width: 80%;
+            overflow: hidden;
+            color: rgba(222, 255, 231, .66);
+            font-size: 11px;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .player-card.audio-mode video {
+            opacity: 0;
+        }
+
+        .music-mode-btn {
+            color: #0f693a;
+            border-color: #b9dec5;
+            background: #eefaf1;
+        }
+
+        .music-mode-btn.is-active {
+            color: #fff;
+            border-color: var(--green);
+            background: var(--green);
+        }
+
         .player-loading {
             display: grid;
             position: absolute;
@@ -1265,8 +1393,16 @@
                 <button class="restart-playback" id="restart-playback" type="button">Restart</button>
             </div>
             <div class="player-loading" id="loader">Loading your file...</div>
-            <video id="video-player" playsinline preload="auto" tabindex="0" hidden></video>
-            <audio id="audio-player" preload="auto" tabindex="0" hidden></audio>
+            <video id="video-player" playsinline webkit-playsinline autoplay preload="auto" tabindex="0" hidden></video>
+            <audio id="audio-player" autoplay preload="auto" tabindex="0" hidden></audio>
+            <div class="music-visualizer" id="music-visualizer" hidden aria-hidden="true">
+                <div class="music-disc">♫</div>
+                <div class="music-bars" aria-hidden="true">
+                    <span></span><span></span><span></span><span></span><span></span><span></span>
+                </div>
+                <strong>Playing as music</strong>
+                <small id="music-file-label">Video is hidden. Audio will continue playing.</small>
+            </div>
             <button class="big-play" id="big-play" aria-label="Play video" hidden>▶</button>
             <div class="custom-controls" id="custom-controls" hidden>
                 <div class="progress-track">
@@ -1338,6 +1474,7 @@
 
             <div class="actions">
                 <a class="btn primary" id="bot-link" target="_blank" rel="noopener">Get via bot</a>
+                <button class="btn music-mode-btn" id="music-mode-toggle" type="button" hidden>♫ Play as Music</button>
             </div>
 
             <div class="disclaimer">
@@ -1366,10 +1503,15 @@
         const speedToggle = document.getElementById("speed-toggle");
         const fullscreenToggle = document.getElementById("fullscreen-toggle");
         const streamModeToggle = document.getElementById("stream-mode-toggle");
+         const musicModeToggle = document.getElementById("music-mode-toggle");
+         const musicVisualizer = document.getElementById("music-visualizer");
+         const musicFileLabel = document.getElementById("music-file-label");
         const completionState = document.getElementById("completion-state");
         const restartPlayback = document.getElementById("restart-playback");
         let activeMedia = null;
         let playbackCompleted = false;
+         let audioOnlyMode = false;
+         let autoplayMuted = false;
         let speedIndex = 1;
         let controlsHideTimer = null;
         let lastSharedStateSave = 0;
@@ -1391,11 +1533,77 @@
         const completionStorageKey = `karva-bhaiya:playback-complete:${fileId}`;
         const liveTimelineStorageKey = `karva-bhaiya:live-timeline:${fileId}`;
         const liveModeStorageKey = `karva-bhaiya:live-mode:${fileId}`;
+         const musicModeStorageKey = `karva-bhaiya:music-mode:${fileId}`;
         const libraryStateKey = "karva-bhaiya:library-state";
 
         const setText = (id, value) => {
             document.getElementById(id).textContent = value || "";
         };
+
+         function updateMusicModeUi() {
+             const isVideo = activeMedia === video;
+             const musicMode = isVideo && audioOnlyMode;
+             playerCard.classList.toggle("audio-mode", musicMode);
+             playerCard.classList.toggle(
+                 "audio-paused",
+                 musicMode && (!activeMedia || activeMedia.paused || activeMedia.ended)
+             );
+             musicVisualizer.hidden = !musicMode;
+             musicModeToggle.hidden = !isVideo;
+             musicModeToggle.classList.toggle("is-active", musicMode);
+             musicModeToggle.textContent = musicMode ? "▣ Show Video" : "♫ Play as Music";
+             musicModeToggle.setAttribute("aria-pressed", String(musicMode));
+             musicModeToggle.setAttribute(
+                 "aria-label",
+                 musicMode ? "Show video" : "Play this file as music"
+             );
+             if (musicMode) {
+                 musicFileLabel.textContent = `${document.getElementById("file-name").textContent || "This file"} · video hidden`;
+             }
+         }
+
+         function restoreMusicMode() {
+             try {
+                 audioOnlyMode = localStorage.getItem(musicModeStorageKey) === "true";
+             } catch {
+                 audioOnlyMode = false;
+             }
+         }
+
+         function setMusicMode(enabled) {
+             if (activeMedia !== video) return;
+             audioOnlyMode = Boolean(enabled);
+             try {
+                 localStorage.setItem(musicModeStorageKey, String(audioOnlyMode));
+             } catch {
+                 // Music mode still works for the current page if storage is unavailable.
+             }
+             updateMusicModeUi();
+             revealPlayerControls(1800);
+         }
+
+         function enableSoundAfterInteraction() {
+             if (!activeMedia || !autoplayMuted) return;
+             activeMedia.muted = false;
+             autoplayMuted = false;
+             updatePlayerUi();
+         }
+
+         function attemptAutoplay() {
+             if (!activeMedia || playbackCompleted) return;
+             activeMedia.autoplay = true;
+             const playback = activeMedia.play();
+             if (!playback || typeof playback.catch !== "function") return;
+             playback.catch(() => {
+                 // Browsers commonly block audible autoplay. Start silently so
+                 // the media remains alive in the background, then restore sound
+                 // on the first user interaction.
+                 activeMedia.muted = true;
+                 autoplayMuted = true;
+                 activeMedia.play().catch(() => {});
+                 updatePlayerUi();
+             });
+         }
 
         async function copyText(value, button) {
             try {
@@ -1463,10 +1671,12 @@
             playerCard.classList.toggle("is-playing", playing);
             muteToggle.textContent = activeMedia.muted || activeMedia.volume === 0 ? "🔇" : "🔊";
             updateStreamModeUi();
+             updateMusicModeUi();
         }
 
         function startPlayback() {
             if (!activeMedia || playbackCompleted) return;
+             enableSoundAfterInteraction();
             if (liveAutoResumeTimer) {
                 clearLiveAutoResumeTimer();
             }
@@ -1701,6 +1911,7 @@
                 liveEdgeStartedAt = Number(activeMedia?.currentTime) || 0;
                 liveEdgeStartedClock = Date.now();
                 scheduleLiveFinish();
+                 enableSoundAfterInteraction();
                 activeMedia?.play().catch(() => {});
                 try {
                     localStorage.setItem(liveTimelineStorageKey, JSON.stringify({
@@ -1821,10 +2032,13 @@
 
         function setupPlayer(media) {
             activeMedia = media;
+             media.autoplay = true;
+             media.preload = "auto";
             media.volume = Number(volumeBar.value);
             customControls.hidden = false;
             bigPlay.hidden = false;
             restoreLiveModeState();
+             if (media === video) restoreMusicMode();
             media.addEventListener("loadedmetadata", restorePlaybackPosition);
             media.addEventListener("loadedmetadata", scheduleLiveFinish);
              media.addEventListener("play", () => {
@@ -1932,6 +2146,7 @@
         };
         muteToggle.onclick = () => {
             if (!activeMedia) return;
+             autoplayMuted = false;
             activeMedia.muted = !activeMedia.muted;
             updatePlayerUi();
         };
@@ -1949,10 +2164,19 @@
         };
         streamModeToggle.onclick = (event) => {
             event.stopPropagation();
+             enableSoundAfterInteraction();
             if (streamingMode === "fast") {
                 setStreamingMode("live");
             }
         };
+         musicModeToggle.onclick = (event) => {
+             event.stopPropagation();
+             enableSoundAfterInteraction();
+             if (activeMedia !== video) return;
+             const wasPaused = activeMedia.paused || activeMedia.ended;
+             setMusicMode(!audioOnlyMode);
+             if (wasPaused) startPlayback();
+         };
         fullscreenToggle.onclick = toggleFullscreen;
         document.addEventListener("fullscreenchange", () => {
             revealPlayerControls();
@@ -1986,11 +2210,15 @@
          document.addEventListener("visibilitychange", () => {
              if (document.hidden) {
                  savePlaybackPosition();
+                 keepBackgroundPlayback();
                  return;
              }
              keepBackgroundPlayback();
              updatePlayerUi();
          });
+         window.addEventListener("blur", keepBackgroundPlayback);
+         window.addEventListener("pointerdown", enableSoundAfterInteraction, { passive: true });
+         window.addEventListener("keydown", enableSoundAfterInteraction);
 
         async function loadFile() {
             try {
@@ -2015,12 +2243,15 @@
                 document.getElementById("vlc-link").href = data.vlc_player_link || streamUrl;
                 document.getElementById("bot-link").href =
                     `https://t.me/${data.bot_username || ""}?start=verify_${encodeURIComponent(fileId)}`;
+                 musicFileLabel.textContent = `${data.file_name || "This file"} · video hidden`;
+                 musicModeToggle.hidden = !isVideo;
 
                 if (isVideo) {
                     setupPlayer(video);
                     video.src = streamUrl;
                     video.hidden = false;
                     video.load();
+                     attemptAutoplay();
                     document.getElementById("browser-link").onclick = (event) => {
                         event.preventDefault();
                         startPlayback();
@@ -2030,6 +2261,7 @@
                     audio.src = streamUrl;
                     audio.hidden = false;
                     audio.load();
+                     attemptAutoplay();
                     document.getElementById("browser-link").onclick = (event) => {
                         event.preventDefault();
                         startPlayback();
