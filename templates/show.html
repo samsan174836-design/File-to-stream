@@ -945,15 +945,22 @@
 
         .player-card:fullscreen {
             width: 100vw;
-            height: 100vh;
+            height: 100dvh;
+            min-height: 0;
+            max-height: 100dvh;
             aspect-ratio: auto;
             border-radius: 0;
+            overflow: hidden;
         }
 
         .player-card:fullscreen video,
         .player-card:-webkit-full-screen video {
+            position: absolute;
+            inset: 0;
             width: 100%;
             height: 100%;
+            max-width: 100%;
+            max-height: 100%;
             object-fit: contain;
         }
 
@@ -967,10 +974,11 @@
             .player-card:-webkit-full-screen {
                 width: 100vw !important;
                 height: 100dvh !important;
-                min-height: 100dvh !important;
+                min-height: 0 !important;
                 max-height: 100dvh;
                 aspect-ratio: auto;
                 border-radius: 0;
+                overflow: hidden;
             }
 
             .player-card:fullscreen .player-overlay-top,
@@ -1377,6 +1385,8 @@
             position: relative;
             overflow-x: hidden;
             font-family: "Avenir Next", "Segoe UI", sans-serif;
+            font-variant-caps: all-small-caps;
+            letter-spacing: .015em;
             background:
                 radial-gradient(circle at 12% 0%, rgba(48, 128, 79, .08), transparent 24rem),
                 linear-gradient(145deg, #fbfdfb 0%, #f1f7f2 100%);
@@ -1620,9 +1630,9 @@
         .player-card {
             aspect-ratio: 16 / 9;
             min-height: 360px;
-            border: 7px solid #fff;
+            border: 7px solid #000;
             border-radius: 25px;
-            box-shadow: 0 28px 70px rgba(20, 63, 38, .17), 0 0 0 1px #cadbce;
+            box-shadow: 0 28px 70px rgba(0, 0, 0, .26), 0 0 0 1px #000;
         }
 
         .player-card::after {
@@ -1639,6 +1649,41 @@
             top: 20px;
             right: 22px;
             left: 22px;
+        }
+
+        .seek-feedback {
+            display: grid;
+            position: absolute;
+            top: 50%;
+            z-index: 7;
+            width: 78px;
+            height: 78px;
+            place-items: center;
+            border: 1px solid rgba(255, 255, 255, .28);
+            border-radius: 50%;
+            color: #f4fff6;
+            background: rgba(4, 15, 8, .78);
+            box-shadow: 0 12px 28px rgba(0, 0, 0, .24), 0 0 0 7px rgba(255, 255, 255, .06);
+            font-size: 12px;
+            font-weight: 850;
+            letter-spacing: .03em;
+            line-height: 1.2;
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(-50%) scale(.76);
+        }
+
+        .seek-feedback.backward { left: 17%; }
+        .seek-feedback.forward { right: 17%; }
+
+        .seek-feedback.is-visible {
+            animation: seek-feedback-in .7s ease both;
+        }
+
+        @keyframes seek-feedback-in {
+            0% { opacity: 0; transform: translateY(-50%) scale(.76); }
+            20%, 72% { opacity: 1; transform: translateY(-50%) scale(1); }
+            100% { opacity: 0; transform: translateY(-50%) scale(1.04); }
         }
 
         .player-badge,
@@ -1763,7 +1808,7 @@
             .page-intro { display: block; margin-bottom: 21px; }
             .page-intro h1 { font-size: 35px; line-height: 1.04; }
             .page-intro p { margin-top: 12px; font-size: 13px; }
-            .player-card { min-height: 215px; border-width: 5px; border-radius: 18px; }
+            .player-card { min-height: 215px; border: 5px solid #000; border-radius: 18px; }
             #content { padding: 22px 16px; }
             #content::before { right: 16px; left: 16px; }
             .file-heading { margin-bottom: 21px; }
@@ -1800,6 +1845,8 @@
                 <button class="player-badge stream-mode-toggle" id="stream-mode-toggle" type="button" aria-label="Switch to Live Streaming" aria-pressed="false">Fast Streaming</button>
                 <span class="player-shortcut">Your Karva Bhaiya</span>
             </div>
+            <div class="seek-feedback backward" id="seek-feedback-backward" aria-hidden="true">-10 sec</div>
+            <div class="seek-feedback forward" id="seek-feedback-forward" aria-hidden="true">+10 sec</div>
             <div class="completion-state" id="completion-state" hidden>
                 <div class="completion-icon" aria-hidden="true">✓</div>
                 <p class="completion-kicker">Playback complete</p>
@@ -1808,7 +1855,7 @@
                 <button class="restart-playback" id="restart-playback" type="button">Restart</button>
             </div>
             <div class="player-loading" id="loader">Loading your file...</div>
-            <video id="video-player" playsinline webkit-playsinline autoplay preload="auto" tabindex="0" hidden></video>
+            <video id="video-player" playsinline webkit-playsinline autoplay preload="auto" controlslist="nodownload noremoteplayback" disableremoteplayback disablepictureinpicture tabindex="0" hidden></video>
             <audio id="audio-player" autoplay preload="auto" tabindex="0" hidden></audio>
             <div class="music-visualizer" id="music-visualizer" hidden aria-hidden="true">
                 <div class="music-disc">♫</div>
@@ -1918,6 +1965,8 @@
         const speedToggle = document.getElementById("speed-toggle");
         const fullscreenToggle = document.getElementById("fullscreen-toggle");
         const streamModeToggle = document.getElementById("stream-mode-toggle");
+        const seekFeedbackBackward = document.getElementById("seek-feedback-backward");
+        const seekFeedbackForward = document.getElementById("seek-feedback-forward");
          const musicModeToggle = document.getElementById("music-mode-toggle");
          const musicVisualizer = document.getElementById("music-visualizer");
          const musicFileLabel = document.getElementById("music-file-label");
@@ -1939,6 +1988,9 @@
         let liveStateTimer = null;
         let liveAutoResumeTimer = null;
         let liveFinishTimer = null;
+        let seekFeedbackTimer = null;
+        let seekFeedbackDirection = 0;
+        let seekFeedbackTotal = 0;
          let livePauseRequested = false;
          let backgroundPlaybackWanted = false;
         const liveLagSeconds = 3;
@@ -2087,6 +2139,26 @@
                 : `${minutes}:${remaining}`;
         }
 
+        function showSeekFeedback(seconds) {
+            const direction = seconds >= 0 ? 1 : -1;
+            if (direction !== seekFeedbackDirection) seekFeedbackTotal = 0;
+            seekFeedbackDirection = direction;
+            seekFeedbackTotal += Math.abs(seconds);
+            const feedback = direction > 0 ? seekFeedbackForward : seekFeedbackBackward;
+            const otherFeedback = direction > 0 ? seekFeedbackBackward : seekFeedbackForward;
+            otherFeedback.classList.remove("is-visible");
+            feedback.textContent = `${direction > 0 ? "+" : "-"}${seekFeedbackTotal} sec`;
+            feedback.classList.remove("is-visible");
+            void feedback.offsetWidth;
+            feedback.classList.add("is-visible");
+            clearTimeout(seekFeedbackTimer);
+            seekFeedbackTimer = window.setTimeout(() => {
+                feedback.classList.remove("is-visible");
+                seekFeedbackDirection = 0;
+                seekFeedbackTotal = 0;
+            }, 720);
+        }
+
         function updatePlayerUi() {
             if (!activeMedia) return;
             const duration = Number.isFinite(activeMedia.duration) ? activeMedia.duration : 0;
@@ -2097,8 +2169,13 @@
             progressBar.value = String(Math.round(progressValue * 1000));
             let bufferedEnd = 0;
             try {
-                if (activeMedia.buffered.length) {
-                    bufferedEnd = activeMedia.buffered.end(activeMedia.buffered.length - 1);
+                for (let rangeIndex = 0; rangeIndex < activeMedia.buffered.length; rangeIndex += 1) {
+                    const rangeStart = activeMedia.buffered.start(rangeIndex);
+                    const rangeEnd = activeMedia.buffered.end(rangeIndex);
+                    if (current >= rangeStart - .05 && current <= rangeEnd + .05) {
+                        bufferedEnd = rangeEnd;
+                        break;
+                    }
                 }
             } catch {
                 bufferedEnd = 0;
@@ -2252,9 +2329,11 @@
                 Math.max(activeMedia.currentTime + seconds, 0),
                 maximumTime
             );
+            const didSeek = nextTime !== activeMedia.currentTime;
             activeMedia.currentTime = nextTime;
             savePlaybackPosition();
             updatePlayerUi();
+            if (didSeek) showSeekFeedback(seconds);
         }
 
         function getLiveEdgeTime() {
@@ -2678,6 +2757,15 @@
          window.addEventListener("blur", keepBackgroundPlayback);
          window.addEventListener("pointerdown", enableSoundAfterInteraction, { passive: true });
          window.addEventListener("keydown", enableSoundAfterInteraction);
+        [video, audio].forEach((media) => {
+            media.addEventListener("contextmenu", (event) => event.preventDefault());
+            media.addEventListener("dragstart", (event) => event.preventDefault());
+        });
+        document.addEventListener("keydown", (event) => {
+            if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+                event.preventDefault();
+            }
+        });
 
         async function loadFile() {
             try {

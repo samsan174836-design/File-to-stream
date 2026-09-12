@@ -586,7 +586,7 @@ async def stream_media(r:Request,mid:int,fname:str):
         # every source chunk touched by the requested byte range.
         pc=math.ceil((ub-off+1)/cs)
         body=tc.yield_file(fid,client_id,off,fc,lc,pc,cs);sc=206 if rh else 200
-        hdrs={"Content-Type":m.mime_type or "application/octet-stream","Accept-Ranges":"bytes","Cache-Control":"public, max-age=3600, immutable","Content-Disposition":f'inline; filename="{m.file_name}"',"Content-Length":str(rl),"X-Content-Type-Options":"nosniff"}
+        hdrs={"Content-Type":m.mime_type or "application/octet-stream","Accept-Ranges":"bytes","Cache-Control":"private, no-store, max-age=0","Pragma":"no-cache","Content-Disposition":f'inline; filename="{m.file_name}"',"Content-Length":str(rl),"X-Content-Type-Options":"nosniff"}
         if rh:hdrs["Content-Range"]=f"bytes {fb}-{ub}/{fsize}"
         return StreamingResponse(body,status_code=sc,headers=hdrs)
     except FileNotFoundError:raise HTTPException(404)
