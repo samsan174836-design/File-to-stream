@@ -1257,6 +1257,128 @@
         .actions {
             gap: 10px;
             margin-top: 20px;
+
+        .actions { grid-template-columns: repeat(3, 1fr); }
+
+        .movie-mode-btn {
+            color: #f3e2bd;
+            border-color: #d1ad69;
+            background: linear-gradient(135deg, #322715, #1e1a11);
+            box-shadow: 0 9px 18px rgba(125, 92, 35, .12);
+        }
+
+        .movie-mode-btn:hover {
+            color: #fff5dc;
+            border-color: #e4c27b;
+            background: linear-gradient(135deg, #4a381d, #2a2113);
+        }
+
+        body.movie-mode {
+            color: #eef4ee;
+            background:
+                radial-gradient(ellipse at 50% 18%, rgba(72, 111, 70, .2), transparent 31rem),
+                linear-gradient(180deg, #0a0d0b 0%, #111813 48%, #080b09 100%);
+        }
+
+        body.movie-mode::before {
+            background-image: linear-gradient(rgba(160, 139, 92, .025) 1px, transparent 1px), linear-gradient(90deg, rgba(160, 139, 92, .025) 1px, transparent 1px);
+            mask-image: linear-gradient(to bottom, #000, transparent 82%);
+        }
+
+        body.movie-mode .topbar {
+            border-bottom-color: rgba(215, 188, 123, .16);
+            background: rgba(7, 10, 8, .9);
+        }
+
+        body.movie-mode .topbar-note,
+        body.movie-mode .theme-toggle {
+            border-color: rgba(215, 188, 123, .22);
+            color: #d8c69d;
+            background: rgba(28, 31, 24, .86);
+        }
+
+        body.movie-mode .page {
+            width: min(100% - 44px, 1180px);
+            margin-top: 41px;
+        }
+
+        body.movie-mode .page-intro {
+            text-align: center;
+        }
+
+        body.movie-mode .page-intro .eyebrow,
+        body.movie-mode .page-intro p {
+            margin-right: auto;
+            margin-left: auto;
+        }
+
+        body.movie-mode .page-intro .eyebrow::before {
+            background: #c9a965;
+        }
+
+        body.movie-mode .page-intro h1 {
+            max-width: 900px;
+            margin-right: auto;
+            margin-left: auto;
+            color: #f5f1e7;
+            font-size: clamp(34px, 5vw, 58px);
+        }
+
+        body.movie-mode .page-intro p {
+            color: #aeb9af;
+        }
+
+        body.movie-mode .player-card {
+            min-height: 480px;
+            border-color: #000;
+            border-radius: 10px;
+            box-shadow: 0 30px 80px rgba(0, 0, 0, .6), 0 0 0 1px rgba(204, 169, 95, .16), 0 0 90px rgba(35, 105, 58, .12);
+        }
+
+        body.movie-mode .player-card::after {
+            border-color: rgba(209, 176, 102, .13);
+            border-radius: 4px;
+        }
+
+        body.movie-mode #content {
+            border-color: rgba(213, 188, 126, .16);
+            background: rgba(14, 20, 16, .92);
+            box-shadow: 0 25px 70px rgba(0, 0, 0, .4);
+        }
+
+        body.movie-mode #content::before {
+            background: linear-gradient(90deg, #ae8950, #557f5b, transparent);
+        }
+
+        body.movie-mode .info-card,
+        body.movie-mode .btn {
+            border-color: rgba(114, 151, 119, .24);
+            background: rgba(27, 40, 30, .72);
+        }
+
+        body.movie-mode .info-card:hover,
+        body.movie-mode .btn:hover {
+            border-color: rgba(190, 161, 95, .58);
+            background: rgba(46, 56, 37, .88);
+        }
+
+        body.movie-mode .file-heading,
+        body.movie-mode .share-row {
+            border-bottom-color: rgba(114, 151, 119, .2);
+            border-top-color: rgba(114, 151, 119, .2);
+        }
+
+        body.movie-mode .btn.primary,
+        body.movie-mode .btn.teal {
+            border-color: #2c8950;
+            background: linear-gradient(135deg, #237b48, #124a2c);
+        }
+
+        @media (max-width: 650px) {
+            .actions { grid-template-columns: 1fr; }
+            body.movie-mode .page { width: min(100% - 24px, 1180px); margin-top: 33px; }
+            body.movie-mode .player-card { min-height: 250px; border-radius: 8px; }
+        }
         }
 
         .disclaimer {
@@ -1627,6 +1749,50 @@
             font-size: 14px;
         }
 
+        .study-note {
+            display: inline-flex;
+            max-width: 610px;
+            align-items: center;
+            gap: 11px;
+            margin-top: 18px;
+            padding: 10px 13px 10px 9px;
+            border: 1px solid #d7e8da;
+            border-radius: 11px;
+            color: #476652;
+            background: rgba(239, 248, 241, .78);
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1.45;
+            transition: opacity .25s ease, transform .25s ease;
+        }
+
+        .study-note.is-changing {
+            opacity: .2;
+            transform: translateY(3px);
+        }
+
+        .study-note-mark {
+            display: grid;
+            width: 27px;
+            height: 27px;
+            flex: 0 0 27px;
+            place-items: center;
+            border-radius: 8px;
+            color: #fff;
+            background: linear-gradient(145deg, #278d57, #126039);
+            font-size: 14px;
+        }
+
+        body[data-theme="dark"] .study-note {
+            border-color: #31563c;
+            color: #b8d8bd;
+            background: rgba(25, 54, 35, .7);
+        }
+
+        body.movie-mode .study-note {
+            display: none;
+        }
+
         .player-card {
             aspect-ratio: 16 / 9;
             min-height: 360px;
@@ -1838,6 +2004,10 @@
             <span class="eyebrow">Private media viewer</span>
             <h1 id="page-title">Stream it your way.</h1>
             <p>Fast, secure playback with your progress saved automatically.</p>
+            <div class="study-note" id="study-note" role="status" aria-live="polite">
+                <span class="study-note-mark" aria-hidden="true">✦</span>
+                <span id="study-quote">Small progress every day becomes remarkable results.</span>
+            </div>
         </section>
 
         <section class="player-card" id="player-card">
@@ -1937,6 +2107,7 @@
             <div class="actions">
                 <a class="btn primary" id="bot-link" target="_blank" rel="noopener">Get via bot</a>
                 <button class="btn music-mode-btn" id="music-mode-toggle" type="button" hidden>♫ Play as Music</button>
+                <button class="btn movie-mode-btn" id="movie-mode-toggle" type="button" hidden>▣ Watch As Movie</button>
             </div>
 
             <div class="disclaimer">
@@ -1968,6 +2139,7 @@
         const seekFeedbackBackward = document.getElementById("seek-feedback-backward");
         const seekFeedbackForward = document.getElementById("seek-feedback-forward");
          const musicModeToggle = document.getElementById("music-mode-toggle");
+         const movieModeToggle = document.getElementById("movie-mode-toggle");
          const musicVisualizer = document.getElementById("music-visualizer");
          const musicFileLabel = document.getElementById("music-file-label");
         const completionState = document.getElementById("completion-state");
@@ -1975,6 +2147,7 @@
         let activeMedia = null;
         let playbackCompleted = false;
          let audioOnlyMode = false;
+         let cinemaMode = false;
          let autoplayMuted = false;
         let speedIndex = 1;
         let controlsHideTimer = null;
@@ -2001,11 +2174,32 @@
         const liveTimelineStorageKey = `karva-bhaiya:live-timeline:${fileId}`;
         const liveModeStorageKey = `karva-bhaiya:live-mode:${fileId}`;
          const musicModeStorageKey = `karva-bhaiya:music-mode:${fileId}`;
+        const movieModeStorageKey = `karva-bhaiya:movie-mode:${fileId}`;
         const libraryStateKey = "karva-bhaiya:library-state";
         const themeStorageKey = "karva-bhaiya:theme";
         const themeToggle = document.getElementById("theme-toggle");
         const themeToggleIcon = document.getElementById("theme-toggle-icon");
         const themeToggleLabel = document.getElementById("theme-toggle-label");
+        const studyNote = document.getElementById("study-note");
+        const studyQuote = document.getElementById("study-quote");
+        const studyQuotes = [
+            "Small progress every day becomes remarkable results.",
+            "Focus on the next ten minutes. That is how deep work begins.",
+            "Learn it slowly, remember it deeply, use it confidently.",
+            "Your future self is built by what you choose to study today.",
+            "One clear concept today is better than a hundred rushed pages."
+        ];
+        let studyQuoteIndex = 0;
+
+        window.setInterval(() => {
+            if (document.body.classList.contains("movie-mode")) return;
+            studyNote.classList.add("is-changing");
+            window.setTimeout(() => {
+                studyQuoteIndex = (studyQuoteIndex + 1) % studyQuotes.length;
+                studyQuote.textContent = studyQuotes[studyQuoteIndex];
+                studyNote.classList.remove("is-changing");
+            }, 260);
+        }, 6500);
 
         function applyTheme(theme) {
             const isDark = theme === "dark";
@@ -2079,6 +2273,41 @@
                  // Music mode still works for the current page if storage is unavailable.
              }
              updateMusicModeUi();
+             revealPlayerControls(1800);
+         }
+
+         function updateMovieModeUi() {
+             const isVideo = activeMedia === video;
+             movieModeToggle.hidden = !isVideo;
+             movieModeToggle.classList.toggle("is-active", isVideo && cinemaMode);
+             movieModeToggle.textContent = cinemaMode ? "▣ Exit Movie Mode" : "▣ Watch As Movie";
+             movieModeToggle.setAttribute("aria-pressed", String(isVideo && cinemaMode));
+             movieModeToggle.setAttribute(
+                 "aria-label",
+                 cinemaMode ? "Exit movie mode" : "Watch this video as a movie"
+             );
+             document.body.classList.toggle("movie-mode", isVideo && cinemaMode);
+         }
+
+         function restoreMovieMode() {
+             try {
+                 cinemaMode = localStorage.getItem(movieModeStorageKey) === "true";
+             } catch {
+                 cinemaMode = false;
+             }
+             updateMovieModeUi();
+         }
+
+         function setMovieMode(enabled) {
+             if (activeMedia !== video) return;
+             cinemaMode = Boolean(enabled);
+             if (cinemaMode && audioOnlyMode) setMusicMode(false);
+             try {
+                 localStorage.setItem(movieModeStorageKey, String(cinemaMode));
+             } catch {
+                 // Movie mode still applies for the current page if storage is unavailable.
+             }
+             updateMovieModeUi();
              revealPlayerControls(1800);
          }
 
@@ -2208,6 +2437,7 @@
             muteToggle.textContent = activeMedia.muted || activeMedia.volume === 0 ? "🔇" : "🔊";
             updateStreamModeUi();
              updateMusicModeUi();
+             updateMovieModeUi();
         }
 
         function startPlayback() {
@@ -2577,6 +2807,7 @@
             bigPlay.hidden = false;
             restoreLiveModeState();
              if (media === video) restoreMusicMode();
+             restoreMovieMode();
             media.addEventListener("loadedmetadata", restorePlaybackPosition);
             media.addEventListener("loadedmetadata", scheduleLiveFinish);
              media.addEventListener("play", () => {
@@ -2714,6 +2945,12 @@
              const wasPaused = activeMedia.paused || activeMedia.ended;
              setMusicMode(!audioOnlyMode);
              if (wasPaused) startPlayback();
+         };
+         movieModeToggle.onclick = (event) => {
+             event.stopPropagation();
+             enableSoundAfterInteraction();
+             if (activeMedia !== video) return;
+             setMovieMode(!cinemaMode);
          };
         fullscreenToggle.onclick = toggleFullscreen;
         document.addEventListener("fullscreenchange", () => {
