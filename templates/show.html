@@ -1382,6 +1382,8 @@
         let liveStateTimer = null;
         let liveAutoResumeTimer = null;
         let liveFinishTimer = null;
+         let livePauseRequested = false;
+         let backgroundPlaybackWanted = false;
         const liveLagSeconds = 3;
         const liveResumeDelayMs = 2000;
         const speeds = [0.75, 1, 1.25, 1.5, 2];
@@ -1434,11 +1436,15 @@
             } catch {
                 bufferedEnd = 0;
             }
-            const playedPercentage = duration > 0
-                ? Math.min(100, Math.max(0, (current / duration) * 100))
+             // Live mode's slider ends at the moving playback limit, not at the
+             // file's final duration. Use the same endpoint for the painted
+             // track so the green fill reaches the thumb.
+             const progressVisualEnd = streamingMode === "live" ? progressEnd : duration;
+             const playedPercentage = progressVisualEnd > 0
+                 ? Math.min(100, Math.max(0, (current / progressVisualEnd) * 100))
                 : 0;
-            const bufferedPercentage = duration > 0
-                ? Math.min(100, Math.max(playedPercentage, (bufferedEnd / duration) * 100))
+             const bufferedPercentage = progressVisualEnd > 0
+                 ? Math.min(100, Math.max(playedPercentage, (bufferedEnd / progressVisualEnd) * 100))
                 : 0;
             progressBuffer.style.setProperty("--played", `${playedPercentage}%`);
             progressBuffer.style.setProperty("--buffered", `${bufferedPercentage}%`);
@@ -1465,8 +1471,12 @@
                 clearLiveAutoResumeTimer();
             }
             if (activeMedia.paused || activeMedia.ended) {
+                 livePauseRequested = false;
+                 backgroundPlaybackWanted = true;
                 activeMedia.play().catch(() => {});
             } else {
+                 livePauseRequested = true;
+                 backgroundPlaybackWanted = false;
                 activeMedia.pause();
             }
         }
@@ -1656,9 +1666,15 @@
 
         function scheduleLiveAutoResume() {
             clearLiveAutoResumeTimer();
+             if (livePauseRequested) return;
             liveAutoResumeTimer = window.setTimeout(() => {
                 liveAutoResumeTimer = null;
-                if (streamingMode !== "live" || !activeMedia || playbackCompleted || activeMedia.ended) return;
+                 if (streamingMode !== "live"
+                     || !activeMedia
+                     || playbackCompleted
+                     || activeMedia.ended
+                     || livePauseRequested) return;
+                 backgroundPlaybackWanted = true;
                 activeMedia.currentTime = getLivePlaybackLimit();
                 activeMedia.play().catch(() => {});
             }, liveResumeDelayMs);
@@ -1671,7 +1687,7 @@
                 activeMedia.currentTime = playbackLimit;
                 if (!activeMedia.paused && !activeMedia.ended) {
                     activeMedia.pause();
-                    scheduleLiveAutoResume();
+                     if (!livePauseRequested) scheduleLiveAutoResume();
                 }
             }
             updateStreamModeUi();
@@ -1679,6 +1695,7 @@
 
         function setStreamingMode(mode) {
             streamingMode = mode === "live" ? "live" : "fast";
+             livePauseRequested = false;
             clearLiveAutoResumeTimer();
             if (streamingMode === "live") {
                 liveEdgeStartedAt = Number(activeMedia?.currentTime) || 0;
@@ -1708,6 +1725,46 @@
             updateStreamModeUi();
             revealPlayerControls(1000);
         }
+
+         function keepBackgroundPlayback() {
+             if (!activeMedia
+                 || activeMedia.ended
+                 || playbackCompleted
+                 || !backgroundPlaybackWanted
+                 || livePauseRequested) {
+                 return;
+             }
+             if (activeMedia.paused) {
+                 activeMedia.play().catch(() => {});
+             }
+         }
+
+         function configureMediaSession(fileName) {
+             if (!("mediaSession" in navigator) || typeof MediaMetadata === "undefined") return;
+             try {
+                 navigator.mediaSession.metadata = new MediaMetadata({
+                     title: fileName || "Karva Bhaiya video",
+                     artist: "Karva Bhaiya",
+                     album: "Private media viewer"
+                 });
+                 navigator.mediaSession.setActionHandler("play", () => {
+                     if (!activeMedia || playbackCompleted) return;
+                     livePauseRequested = false;
+                     backgroundPlaybackWanted = true;
+                     activeMedia.play().catch(() => {});
+                 });
+                 navigator.mediaSession.setActionHandler("pause", () => {
+                     if (!activeMedia) return;
+                     livePauseRequested = true;
+                     backgroundPlaybackWanted = false;
+                     activeMedia.pause();
+                 });
+                 navigator.mediaSession.setActionHandler("seekbackward", () => seekBy(-10));
+                 navigator.mediaSession.setActionHandler("seekforward", () => seekBy(10));
+             } catch {
+                 // Media Session is optional and differs between browsers.
+             }
+         }
 
         function restoreLiveModeState() {
             if (hasCompletedPlayback()) {
@@ -1770,6 +1827,9 @@
             restoreLiveModeState();
             media.addEventListener("loadedmetadata", restorePlaybackPosition);
             media.addEventListener("loadedmetadata", scheduleLiveFinish);
+             media.addEventListener("play", () => {
+                 backgroundPlaybackWanted = true;
+             });
             media.addEventListener("timeupdate", savePlaybackPosition);
             media.addEventListener("pause", savePlaybackPosition);
             media.addEventListener("ended", savePlaybackPosition);
@@ -1912,6 +1972,8 @@
                 // The video can still be restarted for this session.
             }
             playbackCompleted = false;
+             livePauseRequested = false;
+             backgroundPlaybackWanted = true;
             playerCard.classList.remove("is-complete");
             setStreamingMode("fast");
             completionState.hidden = true;
@@ -1920,6 +1982,15 @@
             activeMedia.play().catch(() => {});
         };
         window.addEventListener("pagehide", savePlaybackPosition);
+         window.addEventListener("pageshow", keepBackgroundPlayback);
+         document.addEventListener("visibilitychange", () => {
+             if (document.hidden) {
+                 savePlaybackPosition();
+                 return;
+             }
+             keepBackgroundPlayback();
+             updatePlayerUi();
+         });
 
         async function loadFile() {
             try {
@@ -1938,6 +2009,7 @@
                 setText("file-type", isVideo ? "VIDEO" : isAudio ? "AUDIO" : "FILE");
                 setText("report-id", fileId);
                 document.title = `${data.file_name} • Karva Bhaiya`;
+                 configureMediaSession(data.file_name);
 
                 document.getElementById("mx-link").href = data.mx_player_link || streamUrl;
                 document.getElementById("vlc-link").href = data.vlc_player_link || streamUrl;
