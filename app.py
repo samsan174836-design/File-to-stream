@@ -301,24 +301,14 @@ async def handle_file_upload(message: Message, user_id: int):
 
         media = message.document or message.video or message.audio
         original_name = media.file_name or "file"
-        safe_name = "".join(
-            character
-            for character in original_name
-            if character.isalnum() or character in (" ", ".", "_", "-")
-        ).strip() or "file"
-        encoded_name = quote(safe_name, safe="")
-        download_link = f"{Config.BASE_URL}/dl/{sent_message.id}/{encoded_name}"
         stream_link = f"{Config.BASE_URL}/show/{unique_id}"
         display_name = escape(original_name)
-        escaped_download_link = escape(download_link, quote=True)
         escaped_stream_link = escape(stream_link, quote=True)
 
         reply_text = (
             "✅ <b>Your Links Are Ready!</b>\n\n"
             f"📁 <b>File:</b> {display_name}\n\n"
             f"📊 <b>Size:</b> {get_readable_file_size(media.file_size)}\n\n"
-            f"📥 <b>Download Link:</b> "
-            f'<a href="{escaped_download_link}">{escaped_download_link}</a>\n\n'
             f"🎬 <b>Stream Link:</b> "
             f'<a href="{escaped_stream_link}">{escaped_stream_link}</a>\n\n'
             "⏳ <i>This link is permanent while the file remains available.</i>"
@@ -326,7 +316,6 @@ async def handle_file_upload(message: Message, user_id: int):
         button = InlineKeyboardMarkup(
             [[
                 InlineKeyboardButton("🎬 Stream", url=stream_link),
-                InlineKeyboardButton("📥 Download", url=download_link),
             ]]
         )
 
@@ -489,17 +478,17 @@ async def get_file_details_api(request: Request, unique_id: str):
     if not media:
         raise HTTPException(status_code=404, detail="Media not found in the message.")
     file_name = media.file_name or "file"
-    safe_file_name = "".join(c for c in file_name if c.isalnum() or c in (' ', '.', '_', '-')).rstrip()
     mime_type = media.mime_type or "application/octet-stream"
+    stream_link = f"{Config.BASE_URL}/dl/{message_id}/{quote(file_name, safe='')}"
     response_data = {
         "file_name": file_name,
         "file_size": get_readable_file_size(media.file_size),
         "is_media": mime_type.startswith(("video", "audio")),
         "mime_type": mime_type,
         "bot_username": Config.BOT_USERNAME,
-        "direct_dl_link": f"{Config.BASE_URL}/dl/{message_id}/{safe_file_name}",
-        "mx_player_link": f"intent:{Config.BASE_URL}/dl/{message_id}/{safe_file_name}#Intent;action=android.intent.action.VIEW;type={mime_type};end",
-        "vlc_player_link": f"intent:{Config.BASE_URL}/dl/{message_id}/{safe_file_name}#Intent;action=android.intent.action.VIEW;type={mime_type};package=org.videolan.vlc;end"
+        "stream_url": stream_link,
+        "mx_player_link": f"intent:{stream_link}#Intent;action=android.intent.action.VIEW;type={mime_type};end",
+        "vlc_player_link": f"intent:{stream_link}#Intent;action=android.intent.action.VIEW;type={mime_type};package=org.videolan.vlc;end"
     }
     return response_data
 

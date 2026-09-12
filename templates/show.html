@@ -863,6 +863,11 @@
             opacity: 0;
         }
 
+        .player-card.controls-hidden .big-play {
+            opacity: 0;
+            pointer-events: none;
+        }
+
         .progress-bar {
             height: 5px;
             accent-color: #5bd88a;
@@ -1228,7 +1233,7 @@
             </div>
             <div class="player-placeholder" id="no-player" hidden>
                 <strong>Browser preview unavailable</strong>
-                Use the download button below to save this file.
+                This file cannot be previewed in the browser.
             </div>
         </section>
 
@@ -1280,7 +1285,6 @@
 
             <div class="actions">
                 <a class="btn primary" id="bot-link" target="_blank" rel="noopener">Get via bot</a>
-                <a class="btn teal" id="download-link" download>Download file</a>
             </div>
 
             <div class="disclaimer">
@@ -1323,6 +1327,7 @@
         let liveEdgeStartedClock = 0;
         let liveStateTimer = null;
         let liveAutoResumeTimer = null;
+        let liveFinishTimer = null;
         const liveLagSeconds = 3;
         const liveResumeDelayMs = 2000;
         const speeds = [0.75, 1, 1.25, 1.5, 2];
@@ -1374,6 +1379,9 @@
             if (!playing) {
                 clearControlsHideTimer();
                 playerCard.classList.remove("controls-hidden");
+                if (activeMedia.paused && !activeMedia.ended) {
+                    revealPlayerControls(2000);
+                }
             }
             playToggle.textContent = playing ? "❚❚" : "▶";
             bigPlay.textContent = playing ? "❚❚" : "▶";
@@ -1548,6 +1556,36 @@
             }
         }
 
+        function clearLiveFinishTimer() {
+            if (liveFinishTimer) {
+                clearTimeout(liveFinishTimer);
+                liveFinishTimer = null;
+            }
+        }
+
+        function scheduleLiveFinish() {
+            clearLiveFinishTimer();
+            if (streamingMode !== "live"
+                || !activeMedia
+                || !Number.isFinite(activeMedia.duration)
+                || activeMedia.duration <= 0
+                || !liveEdgeStartedClock) {
+                return;
+            }
+
+            const remainingSeconds = Math.max(
+                0,
+                activeMedia.duration - liveEdgeStartedAt + liveLagSeconds
+            );
+            liveFinishTimer = window.setTimeout(() => {
+                liveFinishTimer = null;
+                if (streamingMode !== "live" || !activeMedia || playbackCompleted) return;
+                activeMedia.pause();
+                activeMedia.currentTime = activeMedia.duration;
+                markPlaybackComplete();
+            }, (remainingSeconds * 1000) + 250);
+        }
+
         function scheduleLiveAutoResume() {
             clearLiveAutoResumeTimer();
             liveAutoResumeTimer = window.setTimeout(() => {
@@ -1577,6 +1615,8 @@
             if (streamingMode === "live") {
                 liveEdgeStartedAt = Number(activeMedia?.currentTime) || 0;
                 liveEdgeStartedClock = Date.now();
+                scheduleLiveFinish();
+                activeMedia?.play().catch(() => {});
                 try {
                     localStorage.setItem(liveTimelineStorageKey, JSON.stringify({
                         startedAt: liveEdgeStartedClock,
@@ -1587,6 +1627,7 @@
                     // Live mode still works for the current page if storage is unavailable.
                 }
             } else {
+                clearLiveFinishTimer();
                 liveEdgeStartedAt = 0;
                 liveEdgeStartedClock = 0;
                 try {
@@ -1616,6 +1657,7 @@
                 streamingMode = "live";
                 liveEdgeStartedAt = Math.max(0, startPosition);
                 liveEdgeStartedClock = startedAt;
+                scheduleLiveFinish();
             } catch {
                 // Fall back to Fast Streaming if the saved live state is unavailable.
             }
@@ -1643,15 +1685,9 @@
         function revealPlayerControls(hideDelay = 3500) {
             playerCard.classList.remove("controls-hidden");
             clearControlsHideTimer();
-            if (document.fullscreenElement && activeMedia && !activeMedia.paused) {
+            if (activeMedia && !activeMedia.ended) {
                 controlsHideTimer = setTimeout(() => {
-                    if (document.fullscreenElement && activeMedia && !activeMedia.paused) {
-                        playerCard.classList.add("controls-hidden");
-                    }
-                }, hideDelay);
-            } else if (activeMedia && !activeMedia.paused) {
-                controlsHideTimer = setTimeout(() => {
-                    if (activeMedia && !activeMedia.paused) {
+                    if (activeMedia && !activeMedia.ended) {
                         playerCard.classList.add("controls-hidden");
                     }
                 }, hideDelay);
@@ -1665,6 +1701,7 @@
             bigPlay.hidden = false;
             restoreLiveModeState();
             media.addEventListener("loadedmetadata", restorePlaybackPosition);
+            media.addEventListener("loadedmetadata", scheduleLiveFinish);
             media.addEventListener("timeupdate", savePlaybackPosition);
             media.addEventListener("pause", savePlaybackPosition);
             media.addEventListener("ended", savePlaybackPosition);
@@ -1681,9 +1718,22 @@
 
         playToggle.onclick = startPlayback;
         bigPlay.onclick = startPlayback;
+        async function toggleFullscreen() {
+            try {
+                if (document.fullscreenElement) {
+                    await document.exitFullscreen();
+                } else if (playerCard.requestFullscreen) {
+                    await playerCard.requestFullscreen();
+                } else if (activeMedia?.webkitEnterFullscreen) {
+                    activeMedia.webkitEnterFullscreen();
+                }
+            } catch {
+                // Fullscreen can be denied by the browser or the embedding page.
+            }
+        }
         document.addEventListener("keydown", (event) => {
             revealPlayerControls();
-            if (!activeMedia || ![" ", "Spacebar", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+            if (!activeMedia || ![" ", "Spacebar", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "f", "F"].includes(event.key)) return;
 
             const target = event.target;
             const isTextEntry = target instanceof HTMLTextAreaElement
@@ -1693,6 +1743,10 @@
             if (isTextEntry) return;
 
             event.preventDefault();
+            if (event.key === "f" || event.key === "F") {
+                toggleFullscreen();
+                return;
+            }
             if (event.key === " " || event.key === "Spacebar") {
                 startPlayback();
                 return;
@@ -1771,15 +1825,7 @@
                 setStreamingMode("live");
             }
         };
-        fullscreenToggle.onclick = async () => {
-            if (document.fullscreenElement) {
-                await document.exitFullscreen();
-            } else if (playerCard.requestFullscreen) {
-                await playerCard.requestFullscreen();
-            } else if (activeMedia?.webkitEnterFullscreen) {
-                activeMedia.webkitEnterFullscreen();
-            }
-        };
+        fullscreenToggle.onclick = toggleFullscreen;
         document.addEventListener("fullscreenchange", () => {
             revealPlayerControls();
         });
@@ -1812,7 +1858,7 @@
                 const response = await fetch(`/api/file/${encodeURIComponent(fileId)}`);
                 if (!response.ok) throw new Error("File details unavailable");
                 const data = await response.json();
-                const directLink = data.direct_dl_link;
+                const streamUrl = data.stream_url;
                 const mime = data.mime_type || "";
                 const isVideo = mime.startsWith("video/");
                 const isAudio = mime.startsWith("audio/");
@@ -1825,15 +1871,14 @@
                 setText("report-id", fileId);
                 document.title = `${data.file_name} • Karva Bhaiya`;
 
-                document.getElementById("download-link").href = directLink;
-                document.getElementById("mx-link").href = data.mx_player_link || directLink;
-                document.getElementById("vlc-link").href = data.vlc_player_link || directLink;
+                document.getElementById("mx-link").href = data.mx_player_link || streamUrl;
+                document.getElementById("vlc-link").href = data.vlc_player_link || streamUrl;
                 document.getElementById("bot-link").href =
                     `https://t.me/${data.bot_username || ""}?start=verify_${encodeURIComponent(fileId)}`;
 
                 if (isVideo) {
                     setupPlayer(video);
-                    video.src = directLink;
+                    video.src = streamUrl;
                     video.hidden = false;
                     video.load();
                     document.getElementById("browser-link").onclick = (event) => {
@@ -1842,7 +1887,7 @@
                     };
                 } else if (isAudio) {
                     setupPlayer(audio);
-                    audio.src = directLink;
+                    audio.src = streamUrl;
                     audio.hidden = false;
                     audio.load();
                     document.getElementById("browser-link").onclick = (event) => {
@@ -1863,8 +1908,8 @@
             }
         }
 
-        const directUrl = () => document.getElementById("download-link").href;
-        document.getElementById("copy-link").onclick = (event) => copyText(directUrl(), event.currentTarget);
+        const shareUrl = () => window.location.href;
+        document.getElementById("copy-link").onclick = (event) => copyText(shareUrl(), event.currentTarget);
         document.getElementById("copy-report").onclick = (event) => copyText(fileId, event.currentTarget);
         document.getElementById("share-link").onclick = async (event) => {
             if (navigator.share) {
