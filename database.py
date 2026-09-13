@@ -2,13 +2,18 @@
 
 import motor.motor_asyncio
 from pymongo.errors import DuplicateKeyError
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from config import Config
+
+SERVICE_TIMEZONE = ZoneInfo("Asia/Kolkata")
 
 class Database:
     def __init__(self):
         self._client = None
         self.db = None
         self.collection = None
+        self.users = None
         if not Config.DATABASE_URL:
             print("WARNING: DATABASE_URL not set. Links will not be permanent.")
 
@@ -24,6 +29,7 @@ class Database:
             self._client = motor.motor_asyncio.AsyncIOMotorClient(database_url)
             self.db = self._client["StreamLinksDB"]
             self.collection = self.db["links"]
+            self.users = self.db["users"]
             await self.collection.create_index(
                 [("source_chat_id", 1), ("source_message_id", 1)],
                 unique=True,
@@ -37,6 +43,7 @@ class Database:
         else:
             self.db = None
             self.collection = None
+            self.users = None
 
     async def disconnect(self):
         """Database connection ko band karta hai."""
@@ -84,6 +91,66 @@ class Database:
             await self.collection.delete_one(
                 {"_id": unique_id, "status": "processing"}
             )
+
+    async def reserve_daily_quota(self, user_id, daily_limit=3):
+        """Reserve one free link slot, or allow paid users without a limit."""
+        if self.users is None:
+            return True, False
+
+        now = datetime.now(timezone.utc)
+        quota_day = datetime.now(SERVICE_TIMEZONE).strftime("%Y-%m-%d")
+        await self.users.update_one(
+            {"_id": user_id},
+            {"$setOnInsert": {"quota_day": quota_day, "daily_count": 0}},
+            upsert=True,
+        )
+        user = await self.users.find_one({"_id": user_id}) or {}
+        paid_until = user.get("paid_until")
+        if paid_until and paid_until.tzinfo is None:
+            paid_until = paid_until.replace(tzinfo=timezone.utc)
+        if paid_until and paid_until > now:
+            return True, True
+
+        if user.get("quota_day") != quota_day:
+            result = await self.users.update_one(
+                {"_id": user_id, "quota_day": {"$ne": quota_day}},
+                {"$set": {"quota_day": quota_day, "daily_count": 1}},
+            )
+            return result.modified_count == 1, False
+
+        result = await self.users.update_one(
+            {"_id": user_id, "quota_day": quota_day, "daily_count": {"$lt": daily_limit}},
+            {"$inc": {"daily_count": 1}},
+        )
+        return result.modified_count == 1, False
+
+    async def release_daily_quota(self, user_id):
+        """Return a reserved free slot when link creation fails."""
+        if self.users is None:
+            return
+        quota_day = datetime.now(SERVICE_TIMEZONE).strftime("%Y-%m-%d")
+        await self.users.update_one(
+            {"_id": user_id, "quota_day": quota_day, "daily_count": {"$gt": 0}},
+            {"$inc": {"daily_count": -1}},
+        )
+
+    async def add_subscription(self, user_id, days):
+        """Extend a user's paid access and return the new expiry timestamp."""
+        if self.users is None:
+            return None
+        now = datetime.now(timezone.utc)
+        user = await self.users.find_one({"_id": user_id}) or {}
+        current_until = user.get("paid_until")
+        if current_until and current_until.tzinfo is None:
+            current_until = current_until.replace(tzinfo=timezone.utc)
+        start_at = current_until if current_until and current_until > now else now
+        paid_until = start_at + timedelta(days=days)
+        await self.users.update_one(
+            {"_id": user_id},
+            {"$set": {"paid_until": paid_until}},
+            upsert=True,
+        )
+        return paid_until
 
     async def get_link(self, unique_id):
         if self.collection is not None:

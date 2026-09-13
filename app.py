@@ -146,6 +146,7 @@ startup_error = None
 recent_uploads = {}
 upload_lock = asyncio.Lock()
 upload_delay_seconds = float(os.environ.get("UPLOAD_DELAY_SECONDS", "1.5"))
+FREE_DAILY_LINK_LIMIT = 3
 
 # =====================================================================================
 # --- MULTI-CLIENT LOGIC ---
@@ -275,15 +276,68 @@ async def start_command(client: Client, message: Message):
 
     else:
         reply_text = f"""
-👋 **Hello, {user_name}!**
+👋 <b>Welcome to Karva Bhaiya, {escape(user_name)}!</b>
 
-__Welcome To Sharing Box Bot. I Can Help You Create Permanent, Shareable Links For Your Files.__
+Your private media link assistant for fast, reliable streaming.
 
-**How To Use Me:**
+<b>How it works</b>
+• Send or forward any video, audio, or document.
+• Receive a secure streaming link in seconds.
+• Open it on any device and continue watching anytime.
 
-__Just Send Or Forward Any File To Me And I will instantly give you a special link that you can share with anyone!__
+<b>Free plan:</b> 3 links every day
+<b>Premium plan:</b> Unlimited links for ₹100/month
+
+Send your first file whenever you are ready.
 """
-        await message.reply_text(reply_text)
+        await message.reply_text(reply_text, parse_mode=enums.ParseMode.HTML)
+
+@bot.on_message(filters.command("add") & filters.private)
+async def add_subscription_command(_, message: Message):
+    """Allow the owner to grant or extend a user's paid access."""
+    if not message.from_user or message.from_user.id != Config.OWNER_ID:
+        await message.reply_text(
+            "⛔ <b>Access restricted.</b> This command is available only to the owner.",
+            parse_mode=enums.ParseMode.HTML,
+        )
+        return
+
+    if len(message.command) != 3:
+        await message.reply_text(
+            "<b>Usage:</b> <code>/add user_id days</code>\n\n"
+            "Example: <code>/add 123456789 200</code>",
+            parse_mode=enums.ParseMode.HTML,
+        )
+        return
+
+    try:
+        target_user_id = int(message.command[1])
+        days = int(message.command[2])
+        if target_user_id <= 0 or days <= 0:
+            raise ValueError
+    except ValueError:
+        await message.reply_text(
+            "Please provide a valid user ID and a number of days greater than zero.",
+            quote=True,
+        )
+        return
+
+    paid_until = await db.add_subscription(target_user_id, days)
+    if not paid_until:
+        await message.reply_text(
+            "⚠️ Subscription could not be saved because the database is unavailable.",
+            quote=True,
+        )
+        return
+
+    await message.reply_text(
+        "✅ <b>Premium access updated</b>\n\n"
+        f"User: <code>{target_user_id}</code>\n"
+        f"Added: <b>{days} days</b>\n"
+        f"Valid until: <b>{paid_until.astimezone(ZoneInfo('Asia/Kolkata')).strftime('%d %b %Y, %I:%M %p IST')}</b>",
+        parse_mode=enums.ParseMode.HTML,
+        quote=True,
+    )
 
 async def handle_file_upload(message: Message, user_id: int):
     unique_id = secrets.token_urlsafe(8)
@@ -299,6 +353,8 @@ async def handle_file_upload(message: Message, user_id: int):
         return
     recent_uploads[source_key] = now
     reply_attempted = False
+    quota_reserved = False
+    paid_user = False
 
     try:
         reserved, _existing = await db.reserve_link(
@@ -310,6 +366,11 @@ async def handle_file_upload(message: Message, user_id: int):
                 f"{source_chat_id}/{source_message_id}"
             )
             return
+
+        quota_reserved, paid_user = await db.reserve_daily_quota(
+            user_id, FREE_DAILY_LINK_LIMIT
+        )
+        link_allowed = quota_reserved or paid_user
 
         media = message.document or message.video or message.audio
         original_name = media.file_name or "file"
@@ -354,14 +415,24 @@ async def handle_file_upload(message: Message, user_id: int):
                 raise
             await db.complete_link(unique_id, sent_message.id)
 
-            reply_text = (
-                "✅ <b>Your Links Are Ready!</b>\n\n"
-                f"📁 <b>File:</b> {display_name}\n\n"
-                f"📊 <b>Size:</b> {get_readable_file_size(media.file_size)}\n\n"
-                f"🎬 <b>Stream Link:</b> "
-                f'<a href="{escaped_stream_link}">{escaped_stream_link}</a>\n\n'
-                "⏳ <i>This link is permanent while the file remains available.</i>"
-            )
+            if link_allowed:
+                reply_text = (
+                    "✅ <b>Your link is ready</b>\n\n"
+                    f"📁 <b>File:</b> {display_name}\n\n"
+                    f"📊 <b>Size:</b> {get_readable_file_size(media.file_size)}\n\n"
+                    f"🎬 <b>Stream link:</b> "
+                    f'<a href="{escaped_stream_link}">{escaped_stream_link}</a>\n\n'
+                    "⏳ <i>This link remains available while the file is stored.</i>"
+                )
+            else:
+                reply_text = (
+                    "⚠️ <b>Your daily free limit has been reached</b>\n\n"
+                    "Your 3 free links for today have been used. "
+                    "Your file was received and stored securely, but a new link is not included in the free plan.\n\n"
+                    "✨ <b>Upgrade to Premium</b>\n"
+                    "Create unlimited links for just <b>₹100/month</b>.\n\n"
+                    "Please contact the service owner to activate your subscription."
+                )
             reply_attempted = True
             await telegram_call_with_retry(
                 lambda: message.reply_text(
@@ -376,6 +447,8 @@ async def handle_file_upload(message: Message, user_id: int):
             await asyncio.sleep(upload_delay_seconds)
     except Exception as e:
         await db.release_link(unique_id)
+        if quota_reserved and not paid_user:
+            await db.release_daily_quota(user_id)
         print(f"!!! ERROR: {traceback.format_exc()}")
         if not reply_attempted:
             recent_uploads.pop(source_key, None)
