@@ -314,6 +314,7 @@
         const appStateKey = "karva-bhaiya:library-state";
         const startupState = "{{ 'ready' if bot_ready else 'starting' }}";
         let videos = [];
+        let authRequired = false;
         const viewPaths = { home: "/", continue: "/continue", completed: "/completed", later: "/later", today: "/today", search: "/" };
         const pathViews = { "/": "home", "/home": "home", "/continue": "continue", "/completed": "completed", "/later": "later", "/today": "today" };
         let activeView = pathViews[window.location.pathname] || window.location.hash.slice(1) || "{{ initial_view|default('home') }}";
@@ -390,6 +391,10 @@
             return [...list].sort((a, b) => (state.history[b.id] || b.createdAt || "").toString().localeCompare((state.history[a.id] || a.createdAt || "").toString()));
         }
         function renderHome() {
+            if (authRequired) {
+                document.getElementById("home-sections").innerHTML = `<section class="section">${emptyMarkup("Private library locked", "Open the website from your Telegram bot using /website to securely view your videos and links.", "bookmark")}</section>`;
+                return;
+            }
             const continueList = sortByRecent(videos.filter((video) => progressFor(video) > 0));
             const todayList = videos.filter((video) => video.isToday);
             const recentList = sortByRecent(videos.filter((video) => state.history[video.id])).slice(0, 6);
@@ -461,6 +466,13 @@
         async function loadCatalog() {
             try {
                 const response = await fetch("/api/catalog");
+                if (response.status === 401) {
+                    authRequired = true;
+                    videos = [];
+                    document.getElementById("health-label").textContent = "Private login required";
+                    renderAll();
+                    return;
+                }
                 if (!response.ok) throw new Error("catalog unavailable");
                 const data = await response.json();
                 videos = Array.isArray(data.videos) ? data.videos : [];

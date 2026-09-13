@@ -1,6 +1,7 @@
 # database.py (UPDATED VERSION)
 
 import motor.motor_asyncio
+import secrets
 from pymongo.errors import DuplicateKeyError
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -14,6 +15,8 @@ class Database:
         self.db = None
         self.collection = None
         self.users = None
+        self.web_login_tokens = None
+        self.web_sessions = None
         if not Config.DATABASE_URL:
             print("WARNING: DATABASE_URL not set. Links will not be permanent.")
 
@@ -30,6 +33,8 @@ class Database:
             self.db = self._client["StreamLinksDB"]
             self.collection = self.db["links"]
             self.users = self.db["users"]
+            self.web_login_tokens = self.db["web_login_tokens"]
+            self.web_sessions = self.db["web_sessions"]
             await self.collection.create_index(
                 [("source_chat_id", 1), ("source_message_id", 1)],
                 unique=True,
@@ -39,11 +44,19 @@ class Database:
                 },
                 name="unique_source_upload",
             )
+            await self.web_login_tokens.create_index(
+                "expires_at", expireAfterSeconds=0, name="login_token_expiry"
+            )
+            await self.web_sessions.create_index(
+                "expires_at", expireAfterSeconds=0, name="web_session_expiry"
+            )
             print("✅ Database connection established.")
         else:
             self.db = None
             self.collection = None
             self.users = None
+            self.web_login_tokens = None
+            self.web_sessions = None
 
     async def disconnect(self):
         """Database connection ko band karta hai."""
@@ -163,19 +176,69 @@ class Database:
         now = datetime.now(timezone.utc)
         return paid_until if paid_until and paid_until > now else None
 
+    async def create_web_login_token(self, user_id, lifetime_seconds=300):
+        """Create a short-lived, one-time token for the Telegram user."""
+        if self.web_login_tokens is None:
+            return None
+        token = secrets.token_urlsafe(32)
+        await self.web_login_tokens.insert_one({
+            "_id": token,
+            "user_id": user_id,
+            "expires_at": datetime.now(timezone.utc) + timedelta(seconds=lifetime_seconds),
+        })
+        return token
+
+    async def consume_web_login_token(self, token):
+        """Consume a valid login token exactly once and return the Telegram user ID."""
+        if self.web_login_tokens is None or not token:
+            return None
+        doc = await self.web_login_tokens.find_one_and_delete({
+            "_id": token,
+            "expires_at": {"$gt": datetime.now(timezone.utc)},
+        })
+        if not doc:
+            return None
+        user_id = doc.get("user_id")
+        return int(user_id) if user_id is not None else None
+
+    async def create_web_session(self, user_id, lifetime_days=30):
+        """Create an expiring browser session for a Telegram user."""
+        if self.web_sessions is None:
+            return None
+        session_id = secrets.token_urlsafe(32)
+        await self.web_sessions.insert_one({
+            "_id": session_id,
+            "user_id": user_id,
+            "expires_at": datetime.now(timezone.utc) + timedelta(days=lifetime_days),
+        })
+        return session_id
+
+    async def get_web_session_user(self, session_id):
+        """Resolve a browser session to its Telegram user ID."""
+        if self.web_sessions is None or not session_id:
+            return None
+        session = await self.web_sessions.find_one({
+            "_id": session_id,
+            "expires_at": {"$gt": datetime.now(timezone.utc)},
+        })
+        return session.get("user_id") if session else None
+
     async def get_link(self, unique_id):
         if self.collection is not None:
             doc = await self.collection.find_one({'_id': unique_id})
             return doc.get('message_id') if doc else None
         return None
 
-    async def list_ready_links(self, limit=100):
+    async def list_ready_links(self, limit=100, user_id=None):
         """Return link records that can be shown in the browser catalog."""
         if self.collection is None:
             return []
 
+        query = {"message_id": {"$exists": True}}
+        if user_id is not None:
+            query["source_chat_id"] = user_id
         cursor = self.collection.find(
-            {"message_id": {"$exists": True}},
+            query,
             {"_id": 1, "message_id": 1},
         ).sort("_id", -1).limit(limit)
         return await cursor.to_list(length=limit)

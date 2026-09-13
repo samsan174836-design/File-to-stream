@@ -19,7 +19,7 @@ from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, 
 from pyrogram.errors import FloodWait, UserNotParticipant
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse, RedirectResponse
 from pyrogram.file_id import FileId
 from pyrogram import raw
 from pyrogram.session import Session, Auth
@@ -289,6 +289,8 @@ Example: <code>/add 123456789 200</code>
 
 📊 <b>Plans:</b> Free users get 3 links daily; premium users get unlimited links.
 💳 <b>Premium:</b> ₹100/month
+
+🔐 Use <code>/website</code> to open your private video library.
 """
         elif paid_until:
             days_left = max(1, math.ceil((paid_until - datetime.now(timezone.utc)).total_seconds() / 86400))
@@ -302,6 +304,8 @@ Thank you for supporting our service. Your premium access is active, so you can 
 📅 <b>Valid until:</b> {expiry_text}
 
 Send any video, audio, or document whenever you are ready. We appreciate your support! 🙏
+
+🔐 Use <code>/website</code> anytime to open your private video library.
 """
         else:
             reply_text = f"""
@@ -318,6 +322,7 @@ Your private media link assistant for fast, reliable streaming.
 <b>Premium plan:</b> Unlimited links for ₹100/month
 
 Send your first file whenever you are ready.
+🔐 Use <code>/website</code> to securely open your private video library.
 """
         await message.reply_text(reply_text, parse_mode=enums.ParseMode.HTML)
 
@@ -366,6 +371,31 @@ async def add_subscription_command(_, message: Message):
         f"Valid until: <b>{paid_until.astimezone(ZoneInfo('Asia/Kolkata')).strftime('%d %b %Y, %I:%M %p IST')}</b>",
         parse_mode=enums.ParseMode.HTML,
         quote=True,
+    )
+
+@bot.on_message(filters.command("website") & filters.private)
+async def website_login_command(_, message: Message):
+    """Send a one-time secure link to the user's private web library."""
+    token = await db.create_web_login_token(message.from_user.id)
+    if not token or not Config.BASE_URL:
+        await message.reply_text(
+            "⚠️ Website login is temporarily unavailable. Please try again later.",
+            quote=True,
+        )
+        return
+
+    website_url = f"{Config.BASE_URL}/auth/telegram?token={quote(token)}"
+    button = InlineKeyboardMarkup(
+        [[InlineKeyboardButton("🔐 Open My Private Library", url=website_url)]]
+    )
+    await message.reply_text(
+        "🔐 <b>Your private library is ready</b>\n\n"
+        "Use the button below to securely open your personal website library.\n"
+        "Only videos created from your Telegram account will be shown.",
+        reply_markup=button,
+        parse_mode=enums.ParseMode.HTML,
+        quote=True,
+        disable_web_page_preview=True,
     )
 
 async def handle_file_upload(message: Message, user_id: int):
@@ -463,10 +493,11 @@ async def handle_file_upload(message: Message, user_id: int):
                     "Please contact the service owner to activate your subscription."
                 )
             reply_attempted = True
+            reply_markup = storage_button if link_allowed else None
             await telegram_call_with_retry(
                 lambda: message.reply_text(
                     reply_text,
-                    reply_markup=storage_button,
+                    reply_markup=reply_markup,
                     quote=True,
                     disable_web_page_preview=True,
                     parse_mode=enums.ParseMode.HTML,
@@ -552,6 +583,36 @@ async def health_check():
         )
     return {"status": "ok", "message": "Server is healthy and running!"}
 
+async def get_web_user_id(request: Request):
+    """Resolve the authenticated Telegram user for private website APIs."""
+    return await db.get_web_session_user(request.cookies.get("karva_session"))
+
+@app.get("/auth/telegram")
+async def telegram_web_login(token: str):
+    user_id = await db.consume_web_login_token(token)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="This website login link is expired or already used.")
+    session_id = await db.create_web_session(user_id)
+    if not session_id:
+        raise HTTPException(status_code=503, detail="Website login is unavailable while the database is offline.")
+
+    response = RedirectResponse(url="/", status_code=303)
+    response.set_cookie(
+        "karva_session",
+        session_id,
+        max_age=30 * 24 * 60 * 60,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+    )
+    return response
+
+@app.post("/auth/logout")
+async def telegram_web_logout():
+    response = JSONResponse({"status": "ok"})
+    response.delete_cookie("karva_session")
+    return response
+
 def _catalog_title(file_name: str) -> str:
     """Keep the original filename visible while removing only its extension."""
     return os.path.splitext(file_name or "Untitled video")[0].strip() or "Untitled video"
@@ -599,8 +660,14 @@ async def _catalog_item(link, main_bot, today, semaphore):
         return None
 
 @app.get("/api/catalog", response_class=JSONResponse)
-async def get_catalog():
-    """Return the frontend-friendly catalog without changing individual file links."""
+async def get_catalog(request: Request):
+    """Return only the authenticated Telegram user's private catalog."""
+    user_id = await get_web_user_id(request)
+    if user_id is None:
+        return JSONResponse(
+            status_code=401,
+            content={"status": "auth_required", "message": "Open the website from the Telegram bot."},
+        )
     if not bot_ready:
         return {"status": "starting", "videos": []}
 
@@ -612,7 +679,7 @@ async def get_catalog():
     semaphore = asyncio.Semaphore(8)
     items = await asyncio.gather(*(
         _catalog_item(link, main_bot, today, semaphore)
-        for link in await db.list_ready_links(limit=100)
+        for link in await db.list_ready_links(limit=100, user_id=user_id)
     ))
     videos = [item for item in items if item]
 
