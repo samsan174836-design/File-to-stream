@@ -275,7 +275,36 @@ async def start_command(client: Client, message: Message):
         await message.reply_text(reply_text, reply_markup=button, quote=True, disable_web_page_preview=True)
 
     else:
-        reply_text = f"""
+        paid_until = await db.get_subscription(user_id)
+        if user_id == Config.OWNER_ID:
+            reply_text = f"""
+🛡️ <b>Owner Control Center</b>
+
+Welcome back, <b>{escape(user_name)}</b>.
+
+Your service is online and ready to manage. You can grant premium access with:
+<code>/add user_id days</code>
+
+Example: <code>/add 123456789 200</code>
+
+📊 <b>Plans:</b> Free users get 3 links daily; premium users get unlimited links.
+💳 <b>Premium:</b> ₹100/month
+"""
+        elif paid_until:
+            days_left = max(1, math.ceil((paid_until - datetime.now(timezone.utc)).total_seconds() / 86400))
+            expiry_text = paid_until.astimezone(ZoneInfo("Asia/Kolkata")).strftime("%d %b %Y, %I:%M %p IST")
+            reply_text = f"""
+🌟 <b>Welcome back to Karva Bhaiya Premium, {escape(user_name)}!</b>
+
+Thank you for supporting our service. Your premium access is active, so you can create unlimited streaming links without daily limits.
+
+⏳ <b>Days remaining:</b> {days_left}
+📅 <b>Valid until:</b> {expiry_text}
+
+Send any video, audio, or document whenever you are ready. We appreciate your support! 🙏
+"""
+        else:
+            reply_text = f"""
 👋 <b>Welcome to Karva Bhaiya, {escape(user_name)}!</b>
 
 Your private media link assistant for fast, reliable streaming.
@@ -494,7 +523,20 @@ async def home_page(request: Request):
     return templates.TemplateResponse(
         request=request,
         name="home.html",
-        context={"request": request, "bot_ready": bot_ready},
+        context={"request": request, "bot_ready": bot_ready, "initial_view": "home"},
+    )
+
+@app.get("/home", response_class=HTMLResponse)
+@app.get("/continue", response_class=HTMLResponse)
+@app.get("/completed", response_class=HTMLResponse)
+@app.get("/later", response_class=HTMLResponse)
+@app.get("/today", response_class=HTMLResponse)
+async def library_section_page(request: Request):
+    section = request.url.path.strip("/") or "home"
+    return templates.TemplateResponse(
+        request=request,
+        name="home.html",
+        context={"request": request, "bot_ready": bot_ready, "initial_view": section},
     )
 
 @app.get("/health")
@@ -522,6 +564,40 @@ def _catalog_category(file_name: str, mime_type: str) -> str:
         return "Audio"
     return "Entertainment"
 
+async def _catalog_item(link, main_bot, today, semaphore):
+    unique_id = str(link.get("_id", ""))
+    message_id = link.get("message_id")
+    if not unique_id or not message_id:
+        return None
+    try:
+        async with semaphore:
+            message = await main_bot.get_messages(Config.STORAGE_CHANNEL, message_id)
+        media = message.document or message.video or message.audio
+        if not media:
+            return None
+        file_name = media.file_name or "Untitled video"
+        mime_type = media.mime_type or "application/octet-stream"
+        created_at = message.date.isoformat() if message.date else None
+        message_day = message.date.astimezone(ZoneInfo("Asia/Kolkata")).date() if message.date else None
+        return {
+            "id": unique_id,
+            "title": _catalog_title(file_name),
+            "fileName": file_name,
+            "thumbnail": None,
+            "videoUrl": f"/show/{quote(unique_id)}",
+            "duration": getattr(media, "duration", None),
+            "category": _catalog_category(file_name, mime_type),
+            "subject": None,
+            "lectureNumber": None,
+            "createdAt": created_at,
+            "isToday": message_day == today,
+            "mimeType": mime_type,
+            "fileSize": media.file_size,
+        }
+    except Exception:
+        logging.exception("Catalog item could not be loaded for link %s", unique_id)
+        return None
+
 @app.get("/api/catalog", response_class=JSONResponse)
 async def get_catalog():
     """Return the frontend-friendly catalog without changing individual file links."""
@@ -532,40 +608,13 @@ async def get_catalog():
     if not main_bot:
         return {"status": "starting", "videos": []}
 
-    videos = []
     today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
-    for link in await db.list_ready_links(limit=100):
-        unique_id = str(link.get("_id", ""))
-        message_id = link.get("message_id")
-        if not unique_id or not message_id:
-            continue
-        try:
-            message = await main_bot.get_messages(Config.STORAGE_CHANNEL, message_id)
-            media = message.document or message.video or message.audio
-            if not media:
-                continue
-            file_name = media.file_name or "Untitled video"
-            mime_type = media.mime_type or "application/octet-stream"
-            created_at = message.date.isoformat() if message.date else None
-            message_day = message.date.astimezone(ZoneInfo("Asia/Kolkata")).date() if message.date else None
-            duration = getattr(media, "duration", None)
-            videos.append({
-                "id": unique_id,
-                "title": _catalog_title(file_name),
-                "fileName": file_name,
-                "thumbnail": None,
-                "videoUrl": f"/show/{quote(unique_id)}",
-                "duration": duration,
-                "category": _catalog_category(file_name, mime_type),
-                "subject": None,
-                "lectureNumber": None,
-                "createdAt": created_at,
-                "isToday": message_day == today,
-                "mimeType": mime_type,
-                "fileSize": media.file_size,
-            })
-        except Exception:
-            logging.exception("Catalog item could not be loaded for link %s", unique_id)
+    semaphore = asyncio.Semaphore(8)
+    items = await asyncio.gather(*(
+        _catalog_item(link, main_bot, today, semaphore)
+        for link in await db.list_ready_links(limit=100)
+    ))
+    videos = [item for item in items if item]
 
     return {"status": "ok", "videos": videos}
 

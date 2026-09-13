@@ -152,6 +152,17 @@ class Database:
         )
         return paid_until
 
+    async def get_subscription(self, user_id):
+        """Return the user's active subscription expiry, if any."""
+        if self.users is None:
+            return None
+        user = await self.users.find_one({"_id": user_id}, {"paid_until": 1})
+        paid_until = user.get("paid_until") if user else None
+        if paid_until and paid_until.tzinfo is None:
+            paid_until = paid_until.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        return paid_until if paid_until and paid_until > now else None
+
     async def get_link(self, unique_id):
         if self.collection is not None:
             doc = await self.collection.find_one({'_id': unique_id})

@@ -175,6 +175,68 @@
             .page-title { align-items: start; flex-direction: column; }
         }
         @media (max-width: 390px) { .video-grid { grid-template-columns: 1fr; } .video-grid .video-card { display: grid; grid-template-columns: 42% 58%; } .video-grid .thumb { aspect-ratio: auto; min-height: 115px; } .video-grid .card-body { display: flex; min-width: 0; flex-direction: column; justify-content: center; } .video-grid .bookmark { top: 6px; right: auto; left: calc(42% - 37px); } }
+
+        /* Refined interaction and glass surfaces */
+        a, button, input { -webkit-tap-highlight-color: transparent; }
+        button, a, input { outline: none; }
+        button:focus, a:focus, input:focus { outline: none; }
+        button:focus-visible, a:focus-visible, input:focus-visible {
+            outline: 2px solid var(--green-500);
+            outline-offset: 3px;
+            box-shadow: none;
+        }
+        body {
+            background:
+                radial-gradient(circle at 92% 0%, rgba(76, 188, 122, .13), transparent 25rem),
+                radial-gradient(circle at 14% 42%, rgba(221, 241, 227, .72), transparent 31rem),
+                linear-gradient(145deg, #f8fcf9 0%, #eef7f1 100%);
+        }
+        .sidebar {
+            border-right-color: rgba(190, 217, 198, .7);
+            background: rgba(255, 255, 255, .68);
+            box-shadow: 14px 0 40px rgba(25, 83, 50, .045);
+            backdrop-filter: blur(22px);
+        }
+        .nav-item { border: 1px solid transparent; }
+        .nav-item:hover { border-color: rgba(139, 203, 165, .5); }
+        .nav-item.active {
+            border-color: rgba(139, 203, 165, .62);
+            background: rgba(233, 247, 239, .82);
+            box-shadow: 0 8px 20px rgba(25, 135, 84, .08);
+        }
+        .topbar {
+            border-bottom-color: rgba(190, 217, 198, .65);
+            background: rgba(248, 252, 249, .7);
+            box-shadow: 0 8px 30px rgba(25, 83, 50, .035);
+        }
+        .search-input, .link-form, .health-pill {
+            border-color: rgba(190, 217, 198, .8);
+            background: rgba(255, 255, 255, .64);
+            box-shadow: 0 10px 26px rgba(25, 83, 50, .055);
+            backdrop-filter: blur(16px);
+        }
+        .search-input:focus { border-color: #74bd91; box-shadow: 0 0 0 4px rgba(65, 185, 120, .13); }
+        .hero-visual {
+            border-color: rgba(163, 211, 177, .8);
+            background: linear-gradient(145deg, rgba(255, 255, 255, .68), rgba(225, 246, 232, .7));
+            box-shadow: 0 24px 55px rgba(25, 83, 50, .11), inset 0 1px 0 rgba(255, 255, 255, .75);
+            backdrop-filter: blur(18px);
+        }
+        .primary-btn, .secondary-btn { -webkit-tap-highlight-color: transparent; }
+        .primary-btn:active, .secondary-btn:active, .nav-item:active, .section-link:active { transform: scale(.98); }
+        .video-card {
+            border-color: rgba(190, 217, 198, .78);
+            background: rgba(255, 255, 255, .7);
+            box-shadow: 0 12px 30px rgba(25, 83, 50, .07), inset 0 1px 0 rgba(255, 255, 255, .8);
+            backdrop-filter: blur(13px);
+        }
+        .video-card:hover { border-color: rgba(116, 190, 143, .9); box-shadow: 0 18px 38px rgba(25, 83, 50, .14); }
+        .empty-state, .skeleton { border-color: rgba(190, 217, 198, .78); background: rgba(255, 255, 255, .58); backdrop-filter: blur(12px); }
+        .mobile-nav {
+            border-color: rgba(190, 217, 198, .82);
+            background: rgba(255, 255, 255, .72);
+            box-shadow: 0 16px 38px rgba(25, 83, 50, .18);
+        }
     </style>
 </head>
 <body>
@@ -252,7 +314,9 @@
         const appStateKey = "karva-bhaiya:library-state";
         const startupState = "{{ 'ready' if bot_ready else 'starting' }}";
         let videos = [];
-        let activeView = window.location.hash.slice(1) || "home";
+        const viewPaths = { home: "/", continue: "/continue", completed: "/completed", later: "/later", today: "/today", search: "/" };
+        const pathViews = { "/": "home", "/home": "home", "/continue": "continue", "/completed": "completed", "/later": "later", "/today": "today" };
+        let activeView = pathViews[window.location.pathname] || window.location.hash.slice(1) || "{{ initial_view|default('home') }}";
         let state = readState();
         const icons = {
             bookmark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4h12v16l-6-3.5L6 20V4Z"/></svg>',
@@ -362,7 +426,7 @@
             activeView = valid.includes(view) ? view : "home";
             document.querySelectorAll("[data-view-panel]").forEach((panel) => panel.classList.toggle("active", panel.dataset.viewPanel === activeView));
             document.querySelectorAll("[data-view]").forEach((item) => item.classList.toggle("active", item.dataset.view === activeView));
-            if (updateHash && window.location.hash !== `#${activeView}`) history.replaceState(null, "", `#${activeView}`);
+            if (updateHash && window.location.pathname !== viewPaths[activeView]) history.pushState(null, "", viewPaths[activeView]);
             if (activeView === "search") document.getElementById("search-input").focus();
             window.scrollTo({ top: 0, behavior: "smooth" });
         }
@@ -391,6 +455,7 @@
             });
             document.getElementById("clear-completed").addEventListener("click", () => { if (!state.completed.length) return; state.completed = []; writeState(); renderAll(); showToast("Completed list cleared"); });
             window.addEventListener("hashchange", () => setView(window.location.hash.slice(1), false));
+            window.addEventListener("popstate", () => setView(pathViews[window.location.pathname] || "home", false));
             window.addEventListener("storage", () => { state = readState(); renderAll(); });
         }
         async function loadCatalog() {
