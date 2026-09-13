@@ -644,7 +644,7 @@ async def _catalog_item(link, main_bot, today, semaphore):
             "id": unique_id,
             "title": _catalog_title(file_name),
             "fileName": file_name,
-            "thumbnail": None,
+            "thumbnail": f"/thumbnail/{quote(unique_id)}",
             "videoUrl": f"/show/{quote(unique_id)}",
             "duration": getattr(media, "duration", None),
             "category": _catalog_category(file_name, mime_type),
@@ -684,6 +684,43 @@ async def get_catalog(request: Request):
     videos = [item for item in items if item]
 
     return {"status": "ok", "videos": videos}
+
+@app.get("/thumbnail/{unique_id}")
+async def stream_thumbnail(request: Request, unique_id: str):
+    """Stream Telegram's actual media thumbnail when one is available."""
+    message_id = await db.get_link(unique_id)
+    if not message_id:
+        raise HTTPException(status_code=404, detail="Link expired or invalid.")
+    main_bot = multi_clients.get(0)
+    if not main_bot:
+        raise HTTPException(status_code=503, detail="Bot is not ready.")
+    try:
+        message = await main_bot.get_messages(Config.STORAGE_CHANNEL, message_id)
+        media = message.document or message.video or message.audio
+        thumbnail = (getattr(media, "thumbs", None) or [None])[0] if media else None
+        if not thumbnail:
+            raise HTTPException(status_code=404, detail="Thumbnail not available.")
+        thumbnail_file_id = FileId.decode(thumbnail.file_id)
+        client_id = min(work_loads, key=work_loads.get)
+        client = multi_clients.get(client_id)
+        if not client:
+            raise HTTPException(status_code=503, detail="Bot is not ready.")
+        streamer = class_cache.get(client) or ByteStreamer(client)
+        class_cache[client] = streamer
+        size = thumbnail.file_size or 0
+        if not size:
+            raise HTTPException(status_code=404, detail="Thumbnail size is unavailable.")
+        body = streamer.yield_file(thumbnail_file_id, client_id, 0, 0, size, 1, size)
+        return StreamingResponse(
+            body,
+            media_type="image/jpeg",
+            headers={"Cache-Control": "private, max-age=3600"},
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        logging.exception("Thumbnail could not be loaded for link %s", unique_id)
+        raise HTTPException(status_code=404, detail="Thumbnail not available.")
 
 @app.get("/show/{unique_id}", response_class=HTMLResponse)
 async def show_page(request: Request, unique_id: str):

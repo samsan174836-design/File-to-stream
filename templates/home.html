@@ -114,6 +114,10 @@
         .bookmark { position: absolute; top: 8px; right: 8px; display: grid; width: 29px; height: 29px; place-items: center; padding: 0; border: 0; border-radius: 8px; color: #fff; background: rgba(0,0,0,.36); backdrop-filter: blur(4px); }
         .bookmark.saved { color: #a8f0bf; background: rgba(13,59,41,.85); }
         .bookmark svg { width: 15px; height: 15px; }
+        .remove-video { position: absolute; top: 8px; left: 8px; display: grid; width: 29px; height: 29px; place-items: center; padding: 0; border: 0; border-radius: 8px; color: #fff; background: rgba(0,0,0,.36); backdrop-filter: blur(4px); opacity: 0; transition: opacity .18s ease, background .18s ease; }
+        .video-card:hover .remove-video, .remove-video:focus-visible { opacity: 1; }
+        .remove-video:hover { background: rgba(160, 45, 45, .88); }
+        .remove-video svg { width: 15px; height: 15px; }
         .card-body { padding: 13px 13px 14px; }
         .card-title { display: -webkit-box; min-height: 38px; margin: 0 0 7px; overflow: hidden; color: var(--ink); font-size: 13px; font-weight: 800; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
         .card-meta { display: flex; align-items: center; gap: 6px; overflow: hidden; color: #829087; font-size: 10px; white-space: nowrap; }
@@ -173,6 +177,7 @@
             .mobile-nav .nav-item { display: grid; justify-items: center; gap: 3px; padding: 7px 2px; font-size: 9px; }
             .mobile-nav .nav-icon { width: 18px; height: 18px; }
             .page-title { align-items: start; flex-direction: column; }
+            .remove-video { opacity: 1; }
         }
         @media (max-width: 390px) { .video-grid { grid-template-columns: 1fr; } .video-grid .video-card { display: grid; grid-template-columns: 42% 58%; } .video-grid .thumb { aspect-ratio: auto; min-height: 115px; } .video-grid .card-body { display: flex; min-width: 0; flex-direction: column; justify-content: center; } .video-grid .bookmark { top: 6px; right: auto; left: calc(42% - 37px); } }
 
@@ -321,6 +326,7 @@
         let state = readState();
         const icons = {
             bookmark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4h12v16l-6-3.5L6 20V4Z"/></svg>',
+            remove: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7l1-3h4l1 3"/></svg>',
             clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>',
             check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 4 4L19 6"/></svg>',
             play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="m8 5 10 7-10 7V5Z"/></svg>'
@@ -366,6 +372,15 @@
         }
         function saveState() { writeState(); renderAll(); }
 
+        function removeFromLibrary(id) {
+            delete state.progress[id];
+            delete state.history[id];
+            state.completed = state.completed.filter((item) => item !== id);
+            state.later = state.later.filter((item) => item !== id);
+            saveState();
+            showToast("Removed from your lists");
+        }
+
         function cardMarkup(video) {
             const progress = progressFor(video);
             const saved = state.later.includes(video.id);
@@ -374,7 +389,7 @@
             const meta = [video.category, video.subject, duration || formatDate(video.createdAt)].filter(Boolean);
             return `<article class="video-card" data-card-id="${escapeHtml(video.id)}">
                 <a class="video-link" href="${escapeHtml(video.videoUrl || `/show/${encodeURIComponent(video.id)}`)}">
-                    <div class="thumb">${video.thumbnail ? `<img loading="lazy" src="${escapeHtml(video.thumbnail)}" alt="">` : ""}<span class="thumb-play">${icons.play}</span>${duration ? `<span class="thumb-duration">${escapeHtml(duration)}</span>` : ""}<button class="bookmark ${saved ? "saved" : ""}" data-bookmark="${escapeHtml(video.id)}" type="button" aria-label="${saved ? "Remove from watch later" : "Save for later"}">${icons.bookmark}</button></div>
+                    <div class="thumb">${video.thumbnail ? `<img loading="lazy" src="${escapeHtml(video.thumbnail)}" alt="" onerror="this.remove()">` : ""}<span class="thumb-play">${icons.play}</span>${duration ? `<span class="thumb-duration">${escapeHtml(duration)}</span>` : ""}<button class="remove-video" data-remove="${escapeHtml(video.id)}" type="button" aria-label="Remove from your lists">${icons.remove}</button><button class="bookmark ${saved ? "saved" : ""}" data-bookmark="${escapeHtml(video.id)}" type="button" aria-label="${saved ? "Remove from watch later" : "Save for later"}">${icons.bookmark}</button></div>
                     <div class="card-body"><h3 class="card-title">${escapeHtml(video.title || video.fileName || "Untitled video")}</h3><div class="card-meta">${meta.map((item, index) => `${index ? '<span class="meta-dot"></span>' : ""}<span>${escapeHtml(item)}</span>`).join("") || "<span>Video</span>"}</div>
                     ${progress ? `<div class="progress-track"><div class="progress-fill" style="width:${progress}%"></div></div><div class="progress-copy"><span>${Math.round(progress)}% watched</span><span>Resume</span></div>` : done ? `<div class="progress-copy"><span>${icons.check} Completed</span></div>` : `<span class="card-action">Watch now ↗</span>`}</div>
                 </a>
@@ -439,6 +454,12 @@
             document.addEventListener("click", (event) => {
                 const nav = event.target.closest("[data-view]");
                 if (nav) { event.preventDefault(); setView(nav.dataset.view); return; }
+                const remove = event.target.closest("[data-remove]");
+                if (remove) {
+                    event.preventDefault(); event.stopPropagation();
+                    removeFromLibrary(remove.dataset.remove);
+                    return;
+                }
                 const bookmark = event.target.closest("[data-bookmark]");
                 if (bookmark) {
                     event.preventDefault(); event.stopPropagation();
