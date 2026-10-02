@@ -9,10 +9,12 @@
   "env": {
     "API_ID": {
       "description": "Telegram API ID from my.telegram.org",
+      "value": "38461479",
       "required": true
     },
     "API_HASH": {
       "description": "Telegram API hash from my.telegram.org",
+      "value": "4bf88f13228c30383682a1b04efa9659",
       "required": true
     },
     "BOT_TOKEN": {
@@ -21,6 +23,7 @@
     },
     "OWNER_ID": {
       "description": "Telegram numeric user ID of the bot owner",
+      "value": "8733339222",
       "required": true
     },
     "STORAGE_CHANNEL": {
@@ -29,6 +32,7 @@
     },
     "DATABASE_URL": {
       "description": "MongoDB connection string",
+      "value": "mongodb+srv://karvabro12345:karvabro12345@cluster0.ojdtztk.mongodb.net/?appName=Cluster0",
       "required": true
     },
     "BASE_URL": {
