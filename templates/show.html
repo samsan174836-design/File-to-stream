@@ -2263,6 +2263,8 @@
         const bigPlay = document.getElementById("big-play");
         const customControls = document.getElementById("custom-controls");
         const playToggle = document.getElementById("play-toggle");
+        const skipBackToggle = document.getElementById("skip-back-toggle");
+        const skipForwardToggle = document.getElementById("skip-forward-toggle");
         const progressBar = document.getElementById("progress-bar");
         const progressBuffer = document.getElementById("progress-buffer");
         const timeLabel = document.getElementById("time-label");
@@ -2924,6 +2926,8 @@
         }
 
         playToggle.onclick = startPlayback;
+        skipBackToggle.onclick = () => seekBy(-10);
+        skipForwardToggle.onclick = () => seekBy(10);
         bigPlay.onclick = startPlayback;
         async function toggleFullscreen() {
             try {
