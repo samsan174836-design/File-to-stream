@@ -2282,6 +2282,7 @@
         const restartPlayback = document.getElementById("restart-playback");
         let activeMedia = null;
         let playbackCompleted = false;
+        let isProgressSeeking = false;
          let audioOnlyMode = false;
          let autoplayMuted = false;
         let speedIndex = 1;
@@ -2493,7 +2494,9 @@
             const current = Number.isFinite(activeMedia.currentTime) ? activeMedia.currentTime : 0;
             const progressEnd = streamingMode === "live" ? getLivePlaybackLimit() : duration;
             const progressValue = progressEnd > 0 ? Math.min(1, current / progressEnd) : 0;
-            progressBar.value = String(Math.round(progressValue * 1000));
+            if (!isProgressSeeking) {
+                progressBar.value = String(Math.round(progressValue * 1000));
+            }
             let bufferedEnd = 0;
             try {
                 for (let rangeIndex = 0; rangeIndex < activeMedia.buffered.length; rangeIndex += 1) {
@@ -2900,7 +2903,7 @@
         function setupPlayer(media) {
             activeMedia = media;
              media.autoplay = true;
-             media.preload = "metadata";
+             media.preload = "auto";
             media.volume = Number(volumeBar.value);
             customControls.hidden = false;
             bigPlay.hidden = false;
@@ -3000,6 +3003,9 @@
             revealPlayerControls(1000);
         });
         progressBar.oninput = () => {
+            isProgressSeeking = true;
+        };
+        progressBar.onchange = () => {
             if (activeMedia && Number.isFinite(activeMedia.duration)) {
                 const progressEnd = streamingMode === "live"
                     ? getLivePlaybackLimit()
@@ -3009,10 +3015,23 @@
                     requestedTime,
                     streamingMode === "live" ? getLivePlaybackLimit() : activeMedia.duration
                 );
+                isProgressSeeking = false;
                 savePlaybackPosition();
                 updatePlayerUi();
+            } else {
+                isProgressSeeking = false;
             }
         };
+        progressBar.addEventListener("pointercancel", () => {
+            isProgressSeeking = false;
+            updatePlayerUi();
+        });
+        progressBar.addEventListener("blur", () => {
+            if (isProgressSeeking) {
+                isProgressSeeking = false;
+                updatePlayerUi();
+            }
+        });
         muteToggle.onclick = () => {
             if (!activeMedia) return;
              autoplayMuted = false;

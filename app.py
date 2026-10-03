@@ -44,73 +44,22 @@ async def lifespan(app: FastAPI):
     
     await db.connect()
     
-    global bot_ready, startup_error
+    global bot_ready, startup_error, startup_retry_task
     bot_ready = False
     startup_error = None
-
-    try:
-        print("Starting main Pyrogram bot...")
-        await bot.start()
-        
-        me = await bot.get_me()
-        Config.BOT_USERNAME = me.username
-        print(f"✅ Main Bot [@{Config.BOT_USERNAME}] safaltapoorvak start ho gaya.")
-
-        # --- MULTI-CLIENT STARTUP ---
-        multi_clients[0] = bot
-        work_loads[0] = 0
-        await initialize_clients()
-        
-        print(f"Verifying storage channel ({Config.STORAGE_CHANNEL})...")
-        await bot.get_chat(Config.STORAGE_CHANNEL)
-        print("✅ Storage channel accessible hai.")
-
-        if Config.FORCE_SUB_CHANNEL:
-            try:
-                print(f"Verifying force sub channel ({Config.FORCE_SUB_CHANNEL})...")
-                await bot.get_chat(Config.FORCE_SUB_CHANNEL)
-                print("✅ Force Sub channel accessible hai.")
-            except Exception as e:
-                print(f"!!! WARNING: Bot, Force Sub channel mein admin nahi hai. Error: {e}")
-        
-        try:
-            await cleanup_channel(bot)
-        except Exception as e:
-            print(f"Warning: Channel cleanup fail ho gaya. Error: {e}")
-
-        print("--- Lifespan: Startup safaltapoorvak poora hua. ---")
-        bot_ready = True
-    except FloodWait as e:
-        retry_at = datetime.now(timezone.utc) + timedelta(seconds=e.value)
-        startup_error = (
-            f"Telegram rate limit active. Do not restart the dyno until "
-            f"{retry_at.isoformat()} (wait {e.value} seconds)."
-        )
-        multi_clients.clear()
-        work_loads.clear()
-        print(f"!!! BOT STARTUP BLOCKED: {startup_error}")
-    except ValueError as e:
-        if "Peer id invalid" in str(e):
-            startup_error = (
-                f"STORAGE_CHANNEL={Config.STORAGE_CHANNEL} is not a valid "
-                "Pyrogram channel ID. Use the exact -100... ID, or use "
-                "@public_channel_username instead."
-            )
-            print(f"!!! STORAGE CHANNEL CONFIGURATION ERROR: {startup_error}")
-        else:
-            startup_error = "Bot startup failed because of an invalid configuration value."
-            print(f"!!! BOT STARTUP FAILED: {traceback.format_exc()}")
-        multi_clients.clear()
-        work_loads.clear()
-    except Exception as e:
-        startup_error = "Bot startup failed. Check the Heroku logs for the Telegram error."
-        multi_clients.clear()
-        work_loads.clear()
-        print(f"!!! BOT STARTUP FAILED: {traceback.format_exc()}")
+    startup_retry_task = None
+    await start_bot_with_retry()
     
     yield
     
     print("--- Lifespan: Server band ho raha hai... ---")
+    if startup_retry_task:
+        startup_retry_task.cancel()
+        try:
+            await startup_retry_task
+        except asyncio.CancelledError:
+            pass
+        startup_retry_task = None
     if bot.is_initialized:
         try:
             await bot.stop()
@@ -143,10 +92,14 @@ bot = Client("SimpleStreamBot", api_id=Config.API_ID, api_hash=Config.API_HASH, 
 multi_clients = {}; work_loads = {}; class_cache = {}
 bot_ready = False
 startup_error = None
+startup_retry_task = None
 recent_uploads = {}
 upload_lock = asyncio.Lock()
 upload_delay_seconds = float(os.environ.get("UPLOAD_DELAY_SECONDS", "1.5"))
 FREE_DAILY_LINK_LIMIT = 3
+MEDIA_MESSAGE_CACHE_TTL_SECONDS = 60
+media_message_cache = {}
+media_message_fetches = {}
 
 # =====================================================================================
 # --- MULTI-CLIENT LOGIC ---
@@ -163,9 +116,52 @@ class TokenParser:
             )
         }
 
+
+async def _fetch_media_message(client, message_id, cache_key):
+    try:
+        message = await client.get_messages(Config.STORAGE_CHANNEL, message_id)
+        if message and not message.empty:
+            now = time.monotonic()
+            for key, (expires_at, _) in list(media_message_cache.items()):
+                if expires_at <= now:
+                    media_message_cache.pop(key, None)
+            if len(media_message_cache) >= 512:
+                media_message_cache.pop(next(iter(media_message_cache)), None)
+            media_message_cache[cache_key] = (
+                now + MEDIA_MESSAGE_CACHE_TTL_SECONDS,
+                message,
+            )
+        return message
+    finally:
+        if media_message_fetches.get(cache_key) is asyncio.current_task():
+            media_message_fetches.pop(cache_key, None)
+
+
+async def get_media_message(client, message_id):
+    """Reuse short-lived Telegram metadata across a file's range requests."""
+    cache_key = (id(client), str(Config.STORAGE_CHANNEL), int(message_id))
+    cached = media_message_cache.get(cache_key)
+    if cached:
+        expires_at, message = cached
+        if expires_at > time.monotonic():
+            return message
+        media_message_cache.pop(cache_key, None)
+
+    fetch = media_message_fetches.get(cache_key)
+    if fetch is None:
+        fetch = asyncio.create_task(
+            _fetch_media_message(client, message_id, cache_key)
+        )
+        media_message_fetches[cache_key] = fetch
+    return await asyncio.shield(fetch)
+
+
 async def start_client(client_id, bot_token):
     """ Ek naye client bot ko start karta hai. """
     try:
+        existing_client = multi_clients.get(client_id)
+        if existing_client and existing_client.is_connected:
+            return
         print(f"Attempting to start Client: {client_id}")
         client = await Client(
             name=str(client_id), 
@@ -544,6 +540,90 @@ async def cleanup_channel(c: Client):
             except Exception as e: print(f"Cleanup Error: {e}")
     except Exception as e: print(f"Cleanup Error: {e}")
 
+
+async def retry_bot_startup(wait_seconds):
+    global startup_retry_task
+    current_task = asyncio.current_task()
+    try:
+        await asyncio.sleep(wait_seconds)
+        if not bot_ready:
+            print("Telegram rate limit wait ended; retrying bot startup.")
+            if startup_retry_task is current_task:
+                startup_retry_task = None
+            await start_bot_with_retry()
+    except asyncio.CancelledError:
+        raise
+    finally:
+        if startup_retry_task is current_task:
+            startup_retry_task = None
+
+
+async def start_bot_with_retry():
+    global bot_ready, startup_error, startup_retry_task
+    bot_ready = False
+    try:
+        if not bot.is_connected:
+            print("Starting main Pyrogram bot...")
+            await bot.start()
+
+        me = bot.me or await bot.get_me()
+        Config.BOT_USERNAME = me.username
+        print(f"✅ Main Bot [@{Config.BOT_USERNAME}] safaltapoorvak start ho gaya.")
+
+        multi_clients[0] = bot
+        work_loads.setdefault(0, 0)
+        await initialize_clients()
+
+        print(f"Verifying storage channel ({Config.STORAGE_CHANNEL})...")
+        await bot.get_chat(Config.STORAGE_CHANNEL)
+        print("✅ Storage channel accessible hai.")
+
+        if Config.FORCE_SUB_CHANNEL:
+            try:
+                print(f"Verifying force sub channel ({Config.FORCE_SUB_CHANNEL})...")
+                await bot.get_chat(Config.FORCE_SUB_CHANNEL)
+                print("✅ Force Sub channel accessible hai.")
+            except Exception as error:
+                print(f"!!! WARNING: Bot, Force Sub channel mein admin nahi hai. Error: {error}")
+
+        try:
+            await cleanup_channel(bot)
+        except Exception as error:
+            print(f"Warning: Channel cleanup fail ho gaya. Error: {error}")
+
+        startup_error = None
+        bot_ready = True
+        print("--- Lifespan: Startup safaltapoorvak poora hua. ---")
+    except FloodWait as error:
+        wait_seconds = max(int(error.value) + 1, 1)
+        retry_at = datetime.now(timezone.utc) + timedelta(seconds=wait_seconds)
+        startup_error = (
+            f"Telegram rate limit active. The app will retry automatically after "
+            f"{retry_at.isoformat()} (wait {wait_seconds} seconds). "
+            "Do not restart the dyno during this wait."
+        )
+        print(f"!!! BOT STARTUP WAITING: {startup_error}")
+        if startup_retry_task is None or startup_retry_task.done():
+            startup_retry_task = asyncio.create_task(retry_bot_startup(wait_seconds))
+    except ValueError as error:
+        if "Peer id invalid" in str(error):
+            startup_error = (
+                f"STORAGE_CHANNEL={Config.STORAGE_CHANNEL} is not a valid "
+                "Pyrogram channel ID. Use the exact -100... ID, or use "
+                "@public_channel_username instead."
+            )
+            print(f"!!! STORAGE CHANNEL CONFIGURATION ERROR: {startup_error}")
+        else:
+            startup_error = "Bot startup failed because of an invalid configuration value."
+            print(f"!!! BOT STARTUP FAILED: {traceback.format_exc()}")
+        multi_clients.clear()
+        work_loads.clear()
+    except Exception:
+        startup_error = "Bot startup failed. Check the Heroku logs for the Telegram error."
+        multi_clients.clear()
+        work_loads.clear()
+        print(f"!!! BOT STARTUP FAILED: {traceback.format_exc()}")
+
 # =====================================================================================
 # --- FASTAPI WEB SERVER ---
 # =====================================================================================
@@ -633,7 +713,7 @@ async def _catalog_item(link, main_bot, today, semaphore):
         return None
     try:
         async with semaphore:
-            message = await main_bot.get_messages(Config.STORAGE_CHANNEL, message_id)
+            message = await get_media_message(main_bot, message_id)
         media = message.document or message.video or message.audio
         if not media:
             return None
@@ -696,7 +776,7 @@ async def stream_thumbnail(request: Request, unique_id: str):
     if not main_bot:
         raise HTTPException(status_code=503, detail="Bot is not ready.")
     try:
-        message = await main_bot.get_messages(Config.STORAGE_CHANNEL, message_id)
+        message = await get_media_message(main_bot, message_id)
         media = message.document or message.video or message.audio
         if not media:
             raise HTTPException(status_code=404, detail="Thumbnail not available.")
@@ -754,7 +834,7 @@ async def get_file_details_api(request: Request, unique_id: str):
     if not main_bot:
         raise HTTPException(status_code=503, detail="Bot is not ready.")
     try:
-        message = await main_bot.get_messages(Config.STORAGE_CHANNEL, message_id)
+        message = await get_media_message(main_bot, message_id)
     except Exception:
         raise HTTPException(status_code=404, detail="File not found on Telegram.")
     media = message.document or message.video or message.audio
@@ -810,7 +890,7 @@ async def stream_media(r:Request,mid:int,fname:str):
     
     tc=class_cache.get(c) or ByteStreamer(c);class_cache[c]=tc
     try:
-        msg=await c.get_messages(Config.STORAGE_CHANNEL,mid);m=msg.document or msg.video or msg.audio
+        msg=await get_media_message(c,mid);m=msg.document or msg.video or msg.audio
         if not m or msg.empty:raise FileNotFoundError
         fid=FileId.decode(m.file_id);fsize=m.file_size;rh=r.headers.get("Range","");fb,ub=0,fsize-1
         if rh:
