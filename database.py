@@ -176,33 +176,39 @@ class Database:
         now = datetime.now(timezone.utc)
         return paid_until if paid_until and paid_until > now else None
 
-    async def create_web_login_token(self, user_id, lifetime_seconds=300):
-        """Create a short-lived, one-time token for the Telegram user."""
+    async def create_web_login_token(self, user_id, lifetime_seconds=None):
+        """Create a one-time login token for the Telegram user without a hard expiry."""
         if self.web_login_tokens is None:
             return None
         token = secrets.token_urlsafe(32)
-        await self.web_login_tokens.insert_one({
+        payload = {
             "_id": token,
             "user_id": user_id,
-            "expires_at": datetime.now(timezone.utc) + timedelta(seconds=lifetime_seconds),
-        })
+        }
+        if lifetime_seconds is not None:
+            payload["expires_at"] = datetime.now(timezone.utc) + timedelta(seconds=lifetime_seconds)
+        await self.web_login_tokens.insert_one(payload)
         return token
 
     async def consume_web_login_token(self, token):
         """Consume a valid login token exactly once and return the Telegram user ID."""
         if self.web_login_tokens is None or not token:
             return None
-        doc = await self.web_login_tokens.find_one_and_delete({
-            "_id": token,
-            "expires_at": {"$gt": datetime.now(timezone.utc)},
-        })
+
+        doc = await self.web_login_tokens.find_one({"_id": token})
         if not doc:
             return None
+
+        if doc.get("expires_at") is not None and doc["expires_at"] <= datetime.now(timezone.utc):
+            await self.web_login_tokens.delete_one({"_id": token})
+            return None
+
+        await self.web_login_tokens.delete_one({"_id": token})
         user_id = doc.get("user_id")
         return int(user_id) if user_id is not None else None
 
-    async def create_web_session(self, user_id, lifetime_days=30):
-        """Create an expiring browser session for a Telegram user."""
+    async def create_web_session(self, user_id, lifetime_days=3650):
+        """Create a long-lived browser session tied to the current browser cookie."""
         if self.web_sessions is None:
             return None
         session_id = secrets.token_urlsafe(32)

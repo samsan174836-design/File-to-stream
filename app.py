@@ -597,12 +597,13 @@ async def telegram_web_login(token: str):
         raise HTTPException(status_code=503, detail="Website login is unavailable while the database is offline.")
 
     response = RedirectResponse(url="/", status_code=303)
+    secure_cookie = Config.BASE_URL.startswith("https://") if Config.BASE_URL else False
     response.set_cookie(
         "karva_session",
         session_id,
-        max_age=30 * 24 * 60 * 60,
+        max_age=3650 * 24 * 60 * 60,
         httponly=True,
-        secure=True,
+        secure=secure_cookie,
         samesite="lax",
     )
     return response
@@ -697,17 +698,26 @@ async def stream_thumbnail(request: Request, unique_id: str):
     try:
         message = await main_bot.get_messages(Config.STORAGE_CHANNEL, message_id)
         media = message.document or message.video or message.audio
-        thumbnail = (getattr(media, "thumbs", None) or [None])[0] if media else None
-        if not thumbnail:
+        if not media:
             raise HTTPException(status_code=404, detail="Thumbnail not available.")
-        thumbnail_file_id = FileId.decode(thumbnail.file_id)
+
+        thumb = None
+        if getattr(media, "thumbs", None):
+            thumb = media.thumbs[0]
+        elif getattr(media, "thumb", None):
+            thumb = media.thumb
+
+        if not thumb:
+            raise HTTPException(status_code=404, detail="Thumbnail not available.")
+
+        thumbnail_file_id = FileId.decode(thumb.file_id)
         client_id = min(work_loads, key=work_loads.get)
         client = multi_clients.get(client_id)
         if not client:
             raise HTTPException(status_code=503, detail="Bot is not ready.")
         streamer = class_cache.get(client) or ByteStreamer(client)
         class_cache[client] = streamer
-        size = thumbnail.file_size or 0
+        size = thumb.file_size or 0
         if not size:
             raise HTTPException(status_code=404, detail="Thumbnail size is unavailable.")
         body = streamer.yield_file(thumbnail_file_id, client_id, 0, 0, size, 1, size)
