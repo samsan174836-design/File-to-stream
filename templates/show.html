@@ -958,10 +958,11 @@
         }
 
         .player-card.live-mode .live-edge-label {
-            display: inline-flex;
+            display: none;
         }
 
         .player-card.live-mode.at-live-edge .live-edge-label {
+            display: inline-flex;
             color: #fff;
             background: rgba(198, 39, 52, .94);
             border-color: rgba(255, 115, 124, .65);
@@ -2113,6 +2114,168 @@
             .speed-btn { width: 34px; height: 26px; }
             .controls-topline .time-label { font-size: 9px; }
         }
+
+        /* Larger touch targets and a clearer seek bar, matching the player reference. */
+        .custom-controls {
+            gap: 6px;
+            padding: 14px 22px 18px;
+        }
+
+        .controls-topline {
+            min-height: 20px;
+        }
+
+        .controls-topline .time-label {
+            font-size: 12px;
+        }
+
+        .controls-topline .live-edge-label {
+            padding: 4px 8px;
+            font-size: 11px;
+        }
+
+        .progress-track {
+            display: flex;
+            height: 18px;
+            align-items: center;
+        }
+
+        .progress-bar {
+            height: 18px;
+        }
+
+        .progress-buffer,
+        .progress-bar::-webkit-slider-runnable-track,
+        .progress-bar::-moz-range-track {
+            height: 7px;
+            border-radius: 99px;
+        }
+
+        .progress-bar::-webkit-slider-thumb {
+            width: 18px;
+            height: 18px;
+            margin-top: -5.5px;
+            border: 2px solid #fff;
+        }
+
+        .progress-bar::-moz-range-thumb {
+            width: 14px;
+            height: 14px;
+            border: 2px solid #fff;
+        }
+
+        .control-row {
+            min-height: 46px;
+            gap: 11px;
+        }
+
+        .control-btn {
+            width: 44px;
+            height: 44px;
+            border-radius: 10px;
+            font-size: 20px;
+        }
+
+        #play-toggle {
+            width: 46px;
+            font-size: 22px;
+        }
+
+        .skip-btn {
+            width: 44px;
+        }
+
+        .skip-btn span {
+            font-size: 25px;
+        }
+
+        .skip-btn small {
+            top: 17px;
+            font-size: 9px;
+        }
+
+        .volume-bar {
+            width: 76px;
+            height: 5px;
+        }
+
+        .speed-btn {
+            width: 50px;
+            height: 40px;
+            font-size: 13px;
+        }
+
+        #fullscreen-toggle {
+            font-size: 24px;
+        }
+
+        @media (max-width: 520px) {
+            .custom-controls {
+                gap: 4px;
+                padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
+            }
+
+            .control-row {
+                min-height: 40px;
+                gap: 5px;
+            }
+
+            .control-btn,
+            #play-toggle {
+                width: 38px;
+                height: 38px;
+                font-size: 18px;
+            }
+
+            .skip-btn {
+                width: 38px;
+            }
+
+            .skip-btn span {
+                font-size: 22px;
+            }
+
+            .skip-btn small {
+                top: 14px;
+                font-size: 8px;
+            }
+
+            .volume-bar {
+                width: 40px;
+            }
+
+            .speed-btn {
+                width: 42px;
+                height: 36px;
+                font-size: 11px;
+            }
+
+            .progress-track,
+            .progress-bar {
+                height: 16px;
+            }
+
+            .progress-buffer,
+            .progress-bar::-webkit-slider-runnable-track,
+            .progress-bar::-moz-range-track {
+                height: 6px;
+            }
+
+            .progress-bar::-webkit-slider-thumb {
+                width: 16px;
+                height: 16px;
+                margin-top: -5px;
+            }
+
+            .progress-bar::-moz-range-thumb {
+                width: 12px;
+                height: 12px;
+            }
+
+            .controls-topline .time-label {
+                font-size: 11px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -2303,6 +2466,7 @@
          let livePauseRequested = false;
          let backgroundPlaybackWanted = false;
         const liveLagSeconds = 3;
+        const liveEdgeIndicatorWindowSeconds = 15;
         const liveResumeDelayMs = 2000;
         const speeds = [0.75, 1, 1.25, 1.5, 2];
         const playbackStorageKey = `karva-bhaiya:playback-position:${fileId}`;
@@ -2684,9 +2848,11 @@
 
         function isAtLiveEdge() {
             if (streamingMode !== "live" || !activeMedia || !Number.isFinite(activeMedia.duration)) return false;
-            const playbackLimit = getLivePlaybackLimit();
-            return getLiveEdgeTime() < activeMedia.duration
-                && Math.abs(playbackLimit - activeMedia.currentTime) <= 2;
+            const liveEdge = getLiveEdgeTime();
+            const secondsBehindLiveEdge = liveEdge - activeMedia.currentTime;
+            return liveEdge < activeMedia.duration
+                && secondsBehindLiveEdge >= -0.25
+                && secondsBehindLiveEdge <= liveEdgeIndicatorWindowSeconds;
         }
 
         function updateStreamModeUi() {

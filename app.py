@@ -15,6 +15,7 @@ from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 from pyrogram import Client, filters, enums
+from pyrogram.handlers import MessageHandler
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, ChatMemberUpdated
 from pyrogram.errors import FloodWait, UserNotParticipant
 from fastapi import FastAPI, Request, HTTPException
@@ -210,14 +211,16 @@ async def start_client(client_id, bot_token):
 
     try:
         print(f"Attempting to start additional bot {client_id}.")
-        client = await Client(
+        client = Client(
             name=str(client_id),
             api_id=Config.API_ID,
             api_hash=Config.API_HASH,
             bot_token=bot_token,
-            no_updates=True,
+            no_updates=False,
             in_memory=True,
-        ).start()
+        )
+        register_additional_bot_handlers(client)
+        client = await client.start()
         work_loads[client_id] = 0
         multi_clients[client_id] = client
         print(f"Additional bot {client_id} started successfully.")
@@ -323,7 +326,11 @@ async def start_command(client: Client, message: Message):
                 channel_username = str(Config.FORCE_SUB_CHANNEL).replace('@', '')
                 channel_link = f"https://t.me/{channel_username}"
                 join_button = InlineKeyboardButton("📢 Join Channel", url=channel_link)
-                retry_button = InlineKeyboardButton("✅ Joined", url=f"https://t.me/{Config.BOT_USERNAME}?start={message.command[1]}")
+                bot_username = getattr(getattr(client, "me", None), "username", None) or Config.BOT_USERNAME
+                retry_button = InlineKeyboardButton(
+                    "✅ Joined",
+                    url=f"https://t.me/{bot_username}?start={message.command[1]}",
+                )
                 keyboard = InlineKeyboardMarkup([[join_button], [retry_button]])
                 await message.reply_text(
                     "**You Must Join Our Channel To Get The Link!**\n\n"
@@ -461,10 +468,10 @@ async def website_login_command(_, message: Message):
         disable_web_page_preview=True,
     )
 
-async def handle_file_upload(message: Message, user_id: int):
+async def handle_file_upload(message: Message, user_id: int, source_bot_id: int):
     unique_id = secrets.token_urlsafe(8)
     source_chat_id = message.chat.id if message.chat else user_id
-    source_message_id = message.id
+    source_message_id = f"{source_bot_id}:{message.id}"
     source_key = f"{source_chat_id}:{source_message_id}"
     now = time.monotonic()
     for key, seen_at in list(recent_uploads.items()):
@@ -584,8 +591,29 @@ async def handle_file_upload(message: Message, user_id: int):
                 print(f"!!! ERROR: Failed to send upload error reply: {traceback.format_exc()}")
 
 @bot.on_message(filters.private & (filters.document | filters.video | filters.audio))
-async def file_handler(_, message: Message):
-    await handle_file_upload(message, message.from_user.id)
+async def file_handler(client: Client, message: Message):
+    if not message.from_user:
+        return
+    await handle_file_upload(message, message.from_user.id, client.me.id)
+
+
+def register_additional_bot_handlers(client: Client):
+    """Attach the same user-facing commands and uploads to each added bot."""
+    client.add_handler(
+        MessageHandler(start_command, filters.command("start") & filters.private)
+    )
+    client.add_handler(
+        MessageHandler(add_subscription_command, filters.command("add") & filters.private)
+    )
+    client.add_handler(
+        MessageHandler(website_login_command, filters.command("website") & filters.private)
+    )
+    client.add_handler(
+        MessageHandler(
+            file_handler,
+            filters.private & (filters.document | filters.video | filters.audio),
+        )
+    )
 
 @bot.on_chat_member_updated(filters.chat(Config.STORAGE_CHANNEL))
 async def simple_gatekeeper(c: Client, m_update: ChatMemberUpdated):
