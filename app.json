@@ -47,6 +47,14 @@
       "description": "Optional additional Telegram bot token for multi-client downloads",
       "required": false
     },
+    "MULTI_TOKEN_2": {
+      "description": "Optional second additional Telegram bot token for multi-client downloads",
+      "required": false
+    },
+    "MULTI_TOKEN_3": {
+      "description": "Optional third additional Telegram bot token for multi-client downloads",
+      "required": false
+    },
     "REDIRECT_BLOGGER_URL": {
       "description": "Optional redirect URL",
       "required": false

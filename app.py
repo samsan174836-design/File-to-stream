@@ -60,6 +60,19 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
         startup_retry_task = None
+    pending_client_retries = list(client_retry_tasks.values())
+    for task in pending_client_retries:
+        task.cancel()
+    if pending_client_retries:
+        await asyncio.gather(*pending_client_retries, return_exceptions=True)
+    client_retry_tasks.clear()
+    for client_id, client in list(multi_clients.items()):
+        if client is bot or not client.is_initialized:
+            continue
+        try:
+            await client.stop()
+        except Exception as e:
+            print(f"Warning: Additional bot {client_id} shutdown failed: {type(e).__name__}")
     if bot.is_initialized:
         try:
             await bot.stop()
@@ -89,7 +102,7 @@ logging.getLogger("uvicorn.access").addFilter(HideDLFilter())
 # --- FIX KHATAM ---
 
 bot = Client("SimpleStreamBot", api_id=Config.API_ID, api_hash=Config.API_HASH, bot_token=Config.BOT_TOKEN, in_memory=True)
-multi_clients = {}; work_loads = {}; class_cache = {}
+multi_clients = {}; work_loads = {}; class_cache = {}; client_retry_tasks = {}
 bot_ready = False
 startup_error = None
 startup_retry_task = None
@@ -106,15 +119,32 @@ media_message_fetches = {}
 # =====================================================================================
 
 class TokenParser:
-    """ Environment variables se MULTI_TOKENs ko parse karta hai. """
+    """Parse numbered additional bot tokens from environment variables."""
     @staticmethod
     def parse_from_env():
-        return {
-            c + 1: t
-            for c, (_, t) in enumerate(
-                filter(lambda n: n[0].startswith("MULTI_TOKEN"), sorted(os.environ.items()))
-            )
-        }
+        configured_tokens = []
+        for name in sorted(os.environ):
+            if name == "MULTI_TOKEN":
+                token_index = 1
+            else:
+                match = re.fullmatch(r"MULTI_TOKEN_?([1-9]\d*)", name)
+                if not match:
+                    continue
+                token_index = int(match.group(1))
+            token = os.environ.get(name, "").strip()
+            if token:
+                configured_tokens.append((token_index, name, token))
+
+        configured_tokens.sort(key=lambda item: (item[0], item[1]))
+        seen_tokens = {Config.BOT_TOKEN.strip()} if Config.BOT_TOKEN.strip() else set()
+        parsed_tokens = {}
+        for _, name, token in configured_tokens:
+            if token in seen_tokens:
+                print(f"Skipping duplicate bot token configured in {name}.")
+                continue
+            parsed_tokens[len(parsed_tokens) + 1] = token
+            seen_tokens.add(token)
+        return parsed_tokens
 
 
 async def _fetch_media_message(client, message_id, cache_key):
@@ -156,40 +186,77 @@ async def get_media_message(client, message_id):
     return await asyncio.shield(fetch)
 
 
-async def start_client(client_id, bot_token):
-    """ Ek naye client bot ko start karta hai. """
+async def retry_additional_client(client_id, bot_token, wait_seconds):
+    current_task = asyncio.current_task()
     try:
+        await asyncio.sleep(wait_seconds)
+        if client_retry_tasks.get(client_id) is current_task:
+            client_retry_tasks.pop(client_id, None)
         existing_client = multi_clients.get(client_id)
-        if existing_client and existing_client.is_connected:
-            return
-        print(f"Attempting to start Client: {client_id}")
+        if not existing_client or not existing_client.is_connected:
+            await start_client(client_id, bot_token)
+    except asyncio.CancelledError:
+        raise
+    finally:
+        if client_retry_tasks.get(client_id) is current_task:
+            client_retry_tasks.pop(client_id, None)
+
+
+async def start_client(client_id, bot_token):
+    """Start an additional download bot without exposing its token in logs."""
+    existing_client = multi_clients.get(client_id)
+    if existing_client and existing_client.is_connected:
+        return True
+
+    try:
+        print(f"Attempting to start additional bot {client_id}.")
         client = await Client(
-            name=str(client_id), 
-            api_id=Config.API_ID, 
+            name=str(client_id),
+            api_id=Config.API_ID,
             api_hash=Config.API_HASH,
-            bot_token=bot_token, 
-            no_updates=True, 
-            in_memory=True
+            bot_token=bot_token,
+            no_updates=True,
+            in_memory=True,
         ).start()
         work_loads[client_id] = 0
         multi_clients[client_id] = client
-        print(f"✅ Client {client_id} started successfully.")
-    except Exception as e:
-        print(f"!!! CRITICAL ERROR: Failed to start Client {client_id} - Error: {e}")
+        print(f"Additional bot {client_id} started successfully.")
+        return True
+    except FloodWait as error:
+        wait_seconds = max(int(error.value) + 1, 1)
+        print(
+            f"Additional bot {client_id} hit Telegram FloodWait; "
+            f"retrying in {wait_seconds} seconds."
+        )
+        retry_task = client_retry_tasks.get(client_id)
+        if retry_task is None or retry_task.done():
+            client_retry_tasks[client_id] = asyncio.create_task(
+                retry_additional_client(client_id, bot_token, wait_seconds)
+            )
+        return False
+    except Exception as error:
+        print(
+            f"Additional bot {client_id} failed to start "
+            f"({type(error).__name__}). Check its token and channel access."
+        )
+        return False
 
 async def initialize_clients():
-    """ Saare additional clients ko initialize karta hai. """
+    """Start every valid optional bot configured in the environment."""
     all_tokens = TokenParser.parse_from_env()
     if not all_tokens:
         print("No additional clients found. Using default bot only.")
         return
     
-    print(f"Found {len(all_tokens)} extra clients. Starting them...")
-    tasks = [start_client(i, token) for i, token in all_tokens.items()]
-    await asyncio.gather(*tasks)
-
-    if len(multi_clients) > 1:
-        print(f"✅ Multi-Client Mode Enabled. Total Clients: {len(multi_clients)}")
+    print(f"Found {len(all_tokens)} additional bot token(s). Starting them...")
+    results = await asyncio.gather(
+        *(start_client(client_id, token) for client_id, token in all_tokens.items())
+    )
+    started_count = sum(results)
+    print(
+        f"Multi-client status: {started_count}/{len(all_tokens)} additional bot(s) "
+        "started; the main bot remains available if an extra bot is unavailable."
+    )
 
 # =====================================================================================
 # --- HELPER FUNCTIONS ---
