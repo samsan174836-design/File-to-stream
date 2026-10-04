@@ -39,10 +39,12 @@ heroku config:set \
   MULTI_TOKEN_1="another-bot-token" \
   REDIRECT_BLOGGER_URL="https://example.com/redirect" \
   BLOGGER_PAGE_URL="https://example.com/page" \
+  YOUTUBE_API_KEY="your-youtube-data-api-v3-key" \
   --app your-app-name
 ```
 
 `BASE_URL` must be the public HTTPS app URL and must not end with `/`.
+`YOUTUBE_API_KEY` is optional; set it to enable Study & Knowledge YouTube search. Enable the YouTube Data API v3 in Google Cloud and restrict the key to that API.
 
 ## 3. Deploy
 

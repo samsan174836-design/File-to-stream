@@ -54,6 +54,10 @@
     "BLOGGER_PAGE_URL": {
       "description": "Optional Blogger page URL",
       "required": false
+    },
+    "YOUTUBE_API_KEY": {
+      "description": "Optional Google API key for YouTube Data API v3 study-video search",
+      "required": false
     }
   },
   "formation": {
