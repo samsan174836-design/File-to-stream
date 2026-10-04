@@ -1,0 +1,35 @@
+{
+  "id": "/",
+  "name": "Karva Bhaiya",
+  "short_name": "Karva",
+  "description": "Your personal streaming and study space.",
+  "lang": "en",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone"],
+  "orientation": "any",
+  "theme_color": "#198754",
+  "background_color": "#f7faf8",
+  "categories": ["education", "entertainment", "video"],
+  "icons": [
+    {
+      "src": "/static/icons/app-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icons/app-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icons/app-icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

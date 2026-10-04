@@ -24,12 +24,13 @@ from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, 
 from pyrogram.errors import FloodWait, UserNotParticipant
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse, RedirectResponse
 from pyrogram.file_id import FileId
 from pyrogram import raw
 from pyrogram.session import Session, Auth
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 import math
 
 # Project ki dusri files se important cheezein import karo
@@ -88,6 +89,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 templates = Jinja2Templates(directory="templates")
+app.mount("/static", StaticFiles(directory="static"), name="static")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -734,6 +736,25 @@ async def home_page(request: Request):
         request=request,
         name="home.html",
         context={"request": request, "bot_ready": bot_ready, "initial_view": "home"},
+    )
+
+@app.get("/manifest.webmanifest", include_in_schema=False)
+async def pwa_manifest():
+    return FileResponse(
+        "static/manifest.webmanifest",
+        media_type="application/manifest+json",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+@app.get("/service-worker.js", include_in_schema=False)
+async def pwa_service_worker():
+    return FileResponse(
+        "static/service-worker.js",
+        media_type="application/javascript",
+        headers={
+            "Cache-Control": "no-cache",
+            "Service-Worker-Allowed": "/",
+        },
     )
 
 @app.get("/home", response_class=HTMLResponse)
