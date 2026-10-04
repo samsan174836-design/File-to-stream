@@ -3221,17 +3221,69 @@
              });
          }
 
+        function getBufferedAheadSeconds(media) {
+            const currentTime = Number.isFinite(media.currentTime) ? media.currentTime : 0;
+            try {
+                for (let index = 0; index < media.buffered.length; index += 1) {
+                    const start = media.buffered.start(index);
+                    const end = media.buffered.end(index);
+                    if (currentTime >= start - 0.25 && currentTime <= end + 0.25) {
+                        return Math.max(0, end - currentTime);
+                    }
+                }
+            } catch {
+                // A temporary buffered-range read failure should not stop playback.
+            }
+            return 0;
+        }
+
         function enableAutoStart(media) {
-            const startWhenReady = () => {
-                if (activeMedia !== media || playbackCompleted || !media.paused || media.readyState < 1) return;
-                attemptAutoplay();
+            const startupBufferSeconds = 8;
+            const maximumBufferWaitMs = 12000;
+            const startedAt = Date.now();
+            const watchedEvents = [
+                "loadedmetadata", "loadeddata", "progress", "canplay",
+                "canplaythrough", "seeked", "play"
+            ];
+            let bufferCheckTimer = null;
+
+            const stopWatching = () => {
+                if (bufferCheckTimer !== null) {
+                    window.clearInterval(bufferCheckTimer);
+                    bufferCheckTimer = null;
+                }
+                watchedEvents.forEach((eventName) => {
+                    media.removeEventListener(eventName, startWhenBuffered);
+                });
+                media.removeEventListener("error", stopWatching);
             };
-            ["loadedmetadata", "loadeddata", "canplay", "canplaythrough"].forEach((eventName) => {
-                media.addEventListener(eventName, startWhenReady, { once: true });
+
+            const startWhenBuffered = () => {
+                if (activeMedia !== media || playbackCompleted || !media.paused) {
+                    stopWatching();
+                    return;
+                }
+                if (media.readyState < 2) return;
+
+                const remainingSeconds = Number.isFinite(media.duration)
+                    ? Math.max(0, media.duration - media.currentTime)
+                    : Infinity;
+                const targetSeconds = Math.min(startupBufferSeconds, remainingSeconds);
+                const bufferedAhead = getBufferedAheadSeconds(media);
+                const waitedLongEnough = Date.now() - startedAt >= maximumBufferWaitMs;
+
+                if (bufferedAhead >= targetSeconds || media.readyState >= 4 || waitedLongEnough) {
+                    stopWatching();
+                    attemptAutoplay();
+                }
+            };
+
+            watchedEvents.forEach((eventName) => {
+                media.addEventListener(eventName, startWhenBuffered);
             });
-            window.setTimeout(() => {
-                if (media.readyState >= 1) startWhenReady();
-            }, 1200);
+            media.addEventListener("error", stopWatching, { once: true });
+            bufferCheckTimer = window.setInterval(startWhenBuffered, 250);
+            startWhenBuffered();
         }
 
         async function copyText(value, button) {
@@ -3429,7 +3481,11 @@
         }
 
         function restorePlaybackPosition() {
-            if (!activeMedia || !Number.isFinite(activeMedia.duration)) return;
+            if (!activeMedia) return;
+            if (!Number.isFinite(activeMedia.duration)) {
+                activeMedia.preload = "auto";
+                return;
+            }
             if (hasCompletedPlayback()) {
                 showCompletionState();
                 return;
@@ -3443,6 +3499,8 @@
             } catch {
                 // Ignore storage errors and start from the beginning.
             }
+            // Start aggressive buffering only after the saved position is restored.
+            activeMedia.preload = "auto";
         }
 
         function seekBy(seconds) {
@@ -3706,6 +3764,13 @@
             media.addEventListener("loadedmetadata", scheduleLiveFinish);
             media.addEventListener("playing", () => {
                 if (activeMedia === media) loader.hidden = true;
+            });
+            ["waiting", "stalled"].forEach((eventName) => {
+                media.addEventListener(eventName, () => {
+                    if (activeMedia !== media) return;
+                    loader.textContent = media === video ? "Buffering video..." : "Buffering audio...";
+                    loader.hidden = false;
+                });
             });
              media.addEventListener("play", () => {
                  backgroundPlaybackWanted = true;
