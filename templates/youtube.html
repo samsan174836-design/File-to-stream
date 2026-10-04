@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#080a09">
+    <title>YouTube player · Karva Bhaiya</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { min-width: 320px; min-height: 100vh; margin: 0; color: #f5f7f5; background: #080a09; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+        .player-page { display: flex; min-height: 100vh; flex-direction: column; justify-content: center; padding: 20px; }
+        .player-header { display: flex; width: min(100%, 1400px); align-items: center; gap: 16px; margin: 0 auto 14px; }
+        .back-link, .external-link { color: #bce9ca; font-size: 13px; font-weight: 700; text-decoration: none; white-space: nowrap; }
+        .player-title { flex: 1; min-width: 0; margin: 0; overflow: hidden; color: #f5f7f5; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+        .timer { margin: 4px 0 0; color: #b9c4bc; font-size: 12px; }
+        .player-frame { position: relative; width: min(100%, calc((100vh - 92px) * 16 / 9), 1400px); aspect-ratio: 16 / 9; align-self: center; overflow: hidden; background: #000; }
+        #youtube-player, #youtube-player iframe { display: block; width: 100%; height: 100%; border: 0; }
+        .break-overlay { position: absolute; inset: 0; display: grid; place-content: center; padding: 24px; color: #fff; background: rgba(5, 12, 8, .97); text-align: center; }
+        .break-overlay[hidden] { display: none; }
+        .break-overlay h2 { margin: 0 0 8px; font-size: clamp(26px, 6vw, 48px); }
+        .break-overlay p { margin: 0; color: #d5e2d9; font-size: 15px; }
+        .player-error { margin: 12px auto 0; color: #ffb7b7; font-size: 13px; text-align: center; }
+        @media (max-width: 600px) {
+            .player-page { padding: 14px; }
+            .player-header { flex-wrap: wrap; gap: 10px; }
+            .player-title-wrap { order: 2; width: 100%; flex: 1 0 100%; }
+            .back-link { order: 1; }
+            .external-link { order: 3; margin-left: auto; }
+            .player-frame { width: 100%; }
+        }
+    </style>
+</head>
+<body>
+    <main class="player-page">
+        <header class="player-header">
+            <a class="back-link" href="/">← Library</a>
+            <div class="player-title-wrap">
+                <h1 class="player-title">{{ "YouTube playlist" if media_type == "playlist" else "YouTube video" }}</h1>
+                <p class="timer" id="play-timer" role="status" aria-live="polite">Play · 25:00 remaining</p>
+            </div>
+            <a class="external-link" href="{{ ("https://www.yout-ube.com/playlist?list=" if media_type == "playlist" else "https://www.yout-ube.com/watch?v=") ~ media_id }}" target="_blank" rel="noopener noreferrer">Open via yout-ube ↗</a>
+        </header>
+        <div class="player-frame">
+            <div id="youtube-player"></div>
+            <div class="break-overlay" id="break-overlay" hidden>
+                <div><h2>Break time</h2><p id="break-countdown">Video will resume in 05:00</p></div>
+            </div>
+        </div>
+        <p class="player-error" id="player-error" role="alert" hidden></p>
+    </main>
+    <script>
+        const mediaType = {{ media_type|tojson }};
+        const mediaId = {{ media_id|tojson }};
+        const workDuration = 25 * 60 * 1000;
+        const breakDuration = 5 * 60 * 1000;
+        let player;
+        let elapsedWork = 0;
+        let playingSince = 0;
+        let breakUntil = 0;
+        let timerHandle = null;
+
+        function formatTime(ms) {
+            const seconds = Math.max(0, Math.ceil(ms / 1000));
+            return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+        }
+        function updateTimer() {
+            const now = Date.now();
+            if (breakUntil) {
+                const remaining = Math.max(0, breakUntil - now);
+                document.getElementById("play-timer").textContent = `Break · ${formatTime(remaining)} remaining`;
+                document.getElementById("break-countdown").textContent = `Video will resume in ${formatTime(remaining)}`;
+                if (!remaining) {
+                    breakUntil = 0;
+                    elapsedWork = 0;
+                    document.getElementById("break-overlay").hidden = true;
+                    player.playVideo();
+                }
+                return;
+            }
+            if (playingSince) {
+                elapsedWork += now - playingSince;
+                playingSince = now;
+                if (elapsedWork >= workDuration) {
+                    elapsedWork = 0;
+                    playingSince = 0;
+                    breakUntil = now + breakDuration;
+                    document.getElementById("play-timer").textContent = "Break · 05:00 remaining";
+                    document.getElementById("break-overlay").hidden = false;
+                    player.pauseVideo();
+                    return;
+                }
+            }
+            document.getElementById("play-timer").textContent = `Play · ${formatTime(workDuration - elapsedWork)} remaining`;
+        }
+        function onPlayerState(event) {
+            if (event.data === window.YT.PlayerState.PLAYING) {
+                if (breakUntil) {
+                    player.pauseVideo();
+                    return;
+                }
+                if (!playingSince) playingSince = Date.now();
+                if (!timerHandle) timerHandle = setInterval(updateTimer, 1000);
+            } else {
+                updateTimer();
+                playingSince = 0;
+                if (!breakUntil) {
+                    clearInterval(timerHandle);
+                    timerHandle = null;
+                }
+            }
+        }
+        function onYouTubeIframeAPIReady() {
+            const playerVars = {
+                autoplay: 1,
+                controls: 1,
+                playsinline: 1,
+                rel: 0
+            };
+            if (mediaType === "playlist") {
+                playerVars.listType = "playlist";
+                playerVars.list = mediaId;
+            }
+            player = new YT.Player("youtube-player", {
+                ...(mediaType === "video" ? { videoId: mediaId } : {}),
+                playerVars,
+                events: {
+                    onStateChange: onPlayerState,
+                    onError(event) {
+                        const error = document.getElementById("player-error");
+                        error.textContent = [101, 150].includes(event.data)
+                            ? "This video or playlist cannot be played here because embedding is disabled."
+                            : "This YouTube item is currently unavailable for embedded playback.";
+                        error.hidden = false;
+                    }
+                }
+            });
+        }
+        const apiScript = document.createElement("script");
+        apiScript.src = "https://www.youtube.com/iframe_api";
+        apiScript.onerror = () => {
+            const error = document.getElementById("player-error");
+            error.textContent = "The embedded player could not be loaded. Please try again.";
+            error.hidden = false;
+        };
+        document.head.appendChild(apiScript);
+    </script>
+</body>
+</html>

@@ -749,6 +749,26 @@ async def library_section_page(request: Request):
         context={"request": request, "bot_ready": bot_ready, "initial_view": section},
     )
 
+@app.get("/yt/playlist/{playlist_id}", response_class=HTMLResponse)
+async def youtube_playlist_page(request: Request, playlist_id: str):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{10,64}", playlist_id):
+        raise HTTPException(status_code=404, detail="Invalid YouTube playlist.")
+    return templates.TemplateResponse(
+        request=request,
+        name="youtube.html",
+        context={"request": request, "media_type": "playlist", "media_id": playlist_id},
+    )
+
+@app.get("/yt/{video_id}", response_class=HTMLResponse)
+async def youtube_video_page(request: Request, video_id: str):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
+        raise HTTPException(status_code=404, detail="Invalid YouTube video.")
+    return templates.TemplateResponse(
+        request=request,
+        name="youtube.html",
+        context={"request": request, "media_type": "video", "media_id": video_id},
+    )
+
 @app.get("/health")
 async def health_check():
     """JSON health endpoint for uptime monitors and deployment checks."""
@@ -809,9 +829,14 @@ def _youtube_duration_seconds(duration: str) -> int:
     hours, minutes, seconds = (int(value or 0) for value in match.groups())
     return hours * 3600 + minutes * 60 + seconds
 
+def _youtube_is_short(duration: int, title: str, description: str) -> bool:
+    return duration <= 180 or bool(
+        re.search(r"(?:^|\s)#shorts\b", f"{title} {description}", re.IGNORECASE)
+    )
+
 @app.get("/api/youtube/search", response_class=JSONResponse)
 async def search_youtube_videos(request: Request, q: str):
-    """Search embeddable, non-live YouTube videos at least four minutes long."""
+    """Search embeddable, non-live YouTube videos, excluding Shorts."""
     if await get_web_user_id(request) is None:
         raise HTTPException(status_code=401, detail="Open the website from the Telegram bot to search videos.")
     query = q.strip()
@@ -822,17 +847,25 @@ async def search_youtube_videos(request: Request, q: str):
 
     search_params = {
         "part": "snippet",
-        "type": "video",
         "q": query,
         "maxResults": 50,
         "safeSearch": "strict",
-        "videoEmbeddable": "true",
-        "videoDuration": "any",
     }
     try:
-        results = await asyncio.to_thread(_youtube_api_get, "search", search_params)
+        video_results, playlist_results = await asyncio.gather(
+            asyncio.to_thread(
+                _youtube_api_get,
+                "search",
+                {**search_params, "type": "video", "videoEmbeddable": "true"},
+            ),
+            asyncio.to_thread(
+                _youtube_api_get,
+                "search",
+                {**search_params, "type": "playlist"},
+            ),
+        )
         candidates = []
-        for item in results.get("items", []):
+        for item in video_results.get("items", []):
             video_id = item.get("id", {}).get("videoId", "")
             snippet = item.get("snippet", {})
             if (
@@ -843,18 +876,37 @@ async def search_youtube_videos(request: Request, q: str):
                 continue
             candidates.append((video_id, snippet))
 
-        if not candidates:
-            return {"videos": []}
+        playlist_candidates = []
+        for item in playlist_results.get("items", []):
+            playlist_id = item.get("id", {}).get("playlistId", "")
+            if (
+                item.get("id", {}).get("kind") == "youtube#playlist"
+                and re.fullmatch(r"[A-Za-z0-9_-]{10,64}", playlist_id)
+            ):
+                playlist_candidates.append((playlist_id, item.get("snippet", {})))
 
-        details = await asyncio.to_thread(
-            _youtube_api_get,
-            "videos",
-            {
-                "part": "contentDetails,snippet,liveStreamingDetails",
-                "id": ",".join(video_id for video_id, _ in candidates),
-                "maxResults": len(candidates),
-            },
-        )
+        detail_tasks = []
+        if candidates:
+            detail_tasks.append(asyncio.to_thread(
+                _youtube_api_get,
+                "videos",
+                {
+                    "part": "contentDetails,snippet,liveStreamingDetails",
+                    "id": ",".join(video_id for video_id, _ in candidates),
+                    "maxResults": len(candidates),
+                },
+            ))
+        if playlist_candidates:
+            detail_tasks.append(asyncio.to_thread(
+                _youtube_api_get,
+                "playlists",
+                {
+                    "part": "contentDetails,snippet",
+                    "id": ",".join(playlist_id for playlist_id, _ in playlist_candidates),
+                    "maxResults": len(playlist_candidates),
+                },
+            ))
+        detail_results = await asyncio.gather(*detail_tasks) if detail_tasks else []
     except urllib.error.HTTPError as error:
         logging.warning("YouTube Data API returned HTTP %s", error.code)
         raise HTTPException(status_code=502, detail="YouTube search is temporarily unavailable.") from error
@@ -862,19 +914,26 @@ async def search_youtube_videos(request: Request, q: str):
         logging.warning("YouTube Data API request failed: %s", type(error).__name__)
         raise HTTPException(status_code=502, detail="YouTube search is temporarily unavailable.") from error
 
+    video_details = detail_results[0] if candidates else {"items": []}
+    playlist_details = detail_results[1 if candidates else 0] if playlist_candidates else {"items": []}
     detail_by_id = {
         item.get("id"): item
-        for item in details.get("items", [])
+        for item in video_details.get("items", [])
         if item.get("id") and not item.get("liveStreamingDetails")
         and item.get("snippet", {}).get("liveBroadcastContent", "none") == "none"
     }
-    videos = []
+    results = []
     for video_id, snippet in candidates:
         video = detail_by_id.get(video_id)
         if not video:
             continue
         duration = _youtube_duration_seconds(video.get("contentDetails", {}).get("duration", ""))
-        if duration < 240:
+        video_snippet = video.get("snippet", {})
+        if _youtube_is_short(
+            duration,
+            video_snippet.get("title", snippet.get("title", "")),
+            video_snippet.get("description", ""),
+        ):
             continue
         thumbnails = snippet.get("thumbnails", {})
         thumbnail = (
@@ -883,17 +942,42 @@ async def search_youtube_videos(request: Request, q: str):
             or thumbnails.get("default")
             or {}
         ).get("url")
-        videos.append({
+        results.append({
+            "type": "video",
             "videoId": video_id,
             "title": snippet.get("title", ""),
             "channel": snippet.get("channelTitle", ""),
             "thumbnail": thumbnail,
             "duration": duration,
         })
-        if len(videos) == 15:
-            break
 
-    return {"videos": videos}
+    playlist_detail_by_id = {
+        item.get("id"): item
+        for item in playlist_details.get("items", [])
+        if item.get("id")
+    }
+    for playlist_id, snippet in playlist_candidates:
+        playlist = playlist_detail_by_id.get(playlist_id)
+        if not playlist:
+            continue
+        playlist_snippet = playlist.get("snippet", snippet)
+        thumbnails = playlist_snippet.get("thumbnails", {})
+        thumbnail = (
+            thumbnails.get("high")
+            or thumbnails.get("medium")
+            or thumbnails.get("default")
+            or {}
+        ).get("url")
+        results.append({
+            "type": "playlist",
+            "playlistId": playlist_id,
+            "title": playlist_snippet.get("title", ""),
+            "channel": playlist_snippet.get("channelTitle", ""),
+            "thumbnail": thumbnail,
+            "itemCount": playlist.get("contentDetails", {}).get("itemCount", 0),
+        })
+
+    return {"videos": results}
 
 def _catalog_title(file_name: str) -> str:
     """Keep the original filename visible while removing only its extension."""

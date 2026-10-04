@@ -148,18 +148,38 @@
         .study-search-input:focus { border-color: #8ccba5; box-shadow: 0 0 0 4px rgba(25, 135, 84, .1); }
         .study-status { min-height: 20px; margin: 0 0 14px; color: var(--muted); font-size: 12px; }
         .study-results { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 15px; }
-        .study-result { overflow: hidden; padding: 0; border: 1px solid var(--line); border-radius: 14px; color: inherit; background: var(--paper); text-align: left; cursor: pointer; transition: transform .18s ease, box-shadow .18s ease; }
+        .study-result { overflow: hidden; border: 1px solid var(--line); border-radius: 14px; color: inherit; background: var(--paper); transition: transform .18s ease, box-shadow .18s ease; }
         .study-result:hover { box-shadow: 0 12px 28px rgba(26,73,47,.12); transform: translateY(-2px); }
+        .study-result-link { display: block; color: inherit; text-decoration: none; }
         .study-result img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background: #eaf2ec; }
         .study-result-copy { padding: 12px; }
         .study-result-title { display: -webkit-box; min-height: 38px; margin: 0 0 8px; overflow: hidden; color: var(--green-900); font-size: 13px; font-weight: 800; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
         .study-result-meta { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 11px; }
         .study-result-channel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .youtube-save-button { width: calc(100% - 24px); min-height: 34px; margin: 0 12px 12px; border: 1px solid var(--line); border-radius: 9px; color: var(--green-800); background: var(--green-50); font-size: 11px; font-weight: 800; }
+        .youtube-save-button.saved { color: var(--muted); background: var(--paper); }
         .study-player { margin: 0 0 25px; padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--paper); }
-        .study-player h2 { margin: 0 0 12px; color: var(--green-900); font-size: 16px; }
-        .study-player-frame { overflow: hidden; aspect-ratio: 16 / 9; border-radius: 10px; background: #07100b; }
-        .study-player-frame > div, .study-player-frame iframe { display: block; width: 100%; height: 100%; border: 0; }
+        .study-player-header { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+        .study-player h2 { flex: 1; min-width: 0; margin: 0; overflow: hidden; color: var(--green-900); font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }
+        .study-player-timer { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+        .study-player-close { width: 36px; height: 36px; flex: 0 0 36px; border: 1px solid var(--line); border-radius: 50%; color: var(--ink); background: var(--paper); font-size: 22px; }
+        .study-player-external { flex: 0 0 auto; color: var(--green-700); font-size: 12px; font-weight: 750; }
+        .study-player-frame { position: relative; overflow: hidden; aspect-ratio: 16 / 9; border-radius: 10px; background: #07100b; }
+        #youtube-player-frame, .study-player-frame > iframe { display: block; width: 100%; height: 100%; border: 0; }
         .study-player-error { margin: 12px 0 0; color: var(--danger); font-size: 12px; }
+        .player-break-overlay { position: absolute; inset: 0; display: grid; place-content: center; padding: 24px; color: #fff; background: rgba(5, 12, 8, .96); text-align: center; }
+        .player-break-overlay[hidden] { display: none; }
+        .player-break-overlay h3 { margin: 0 0 8px; font-size: clamp(24px, 5vw, 42px); }
+        .player-break-overlay p { margin: 0; color: #d5e2d9; font-size: 15px; }
+        .view.study-player-only { position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; overflow: auto; padding: 20px; background: #050805; }
+        .study-player-only > *:not(#youtube-player-panel) { display: none; }
+        .study-player-only .study-player { width: min(100%, 1400px); margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
+        .study-player-only .study-player-header { color: #fff; }
+        .study-player-only .study-player h2 { color: #fff; }
+        .study-player-only .study-player-timer { color: #c6d2ca; }
+        .study-player-only .study-player-close { border-color: #465149; color: #fff; background: #18201a; }
+        .study-player-only .study-player-external { color: #a8dfbc; }
+        .study-player-only .study-player-frame { width: min(100%, calc((100vh - 100px) * 16 / 9)); margin: 0 auto; }
         @media (max-width: 760px) { .study-search-form { flex-direction: column; } .study-results { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } .study-player { padding: 10px; } }
         @media (max-width: 390px) { .study-results { grid-template-columns: 1fr; } }
         .mobile-nav { display: none; }
@@ -640,15 +660,27 @@
                 <section class="view" id="view-today" data-view-panel="today"><div class="page-title"><div><h1>Today Lecture</h1><p>Fresh content assigned to today.</p></div><span class="result-count" id="today-count"></span></div><div id="today-grid"></div></section>
                 <section class="view" id="view-search" data-view-panel="search"><div class="page-title"><div><h1>Search</h1><p>Find a title, subject, category, or filename.</p></div><span class="result-count" id="search-count"></span></div><div id="search-grid"></div></section>
                 <section class="view" id="view-study" data-view-panel="study">
-                    <div class="page-title"><div><h1>Study & Knowledge</h1><p>Search educational videos and play them here, without opening YouTube.</p></div></div>
+                    <div class="page-title"><div><h1>Study & Knowledge</h1><p>Search YouTube videos and playlists, save them for later, and open them in a focused player.</p></div></div>
                     <form class="study-search-form" id="youtube-search-form">
                         <input class="study-search-input" id="youtube-search-input" type="search" maxlength="100" placeholder="Search a subject, course, or topic" aria-label="Search YouTube study videos" required>
                         <button class="primary-btn" type="submit">Search videos</button>
                     </form>
-                    <p class="study-status" id="youtube-search-status" role="status" aria-live="polite">Only embeddable videos at least 4 minutes long are shown. Live streams are excluded.</p>
+                    <p class="study-status" id="youtube-search-status" role="status" aria-live="polite">Embeddable videos longer than 3 minutes are shown. Shorts and live streams are excluded.</p>
                     <section class="study-player" id="youtube-player-panel" aria-label="Study video player" hidden>
-                        <h2 id="youtube-player-title"></h2>
-                        <div class="study-player-frame"><div id="youtube-player-frame"></div></div>
+                        <div class="study-player-header">
+                            <button class="study-player-close" id="youtube-player-close" type="button" aria-label="Close player">×</button>
+                            <div style="min-width:0;flex:1">
+                                <h2 id="youtube-player-title"></h2>
+                                <p class="study-player-timer" id="youtube-player-timer" role="status" aria-live="polite"></p>
+                            </div>
+                            <a class="study-player-external" id="youtube-player-external" target="_blank" rel="noopener noreferrer">Open via yout-ube ↗</a>
+                        </div>
+                        <div class="study-player-frame">
+                            <div id="youtube-player-frame"></div>
+                            <div class="player-break-overlay" id="youtube-break-overlay" hidden>
+                                <div><h3>Break time</h3><p id="youtube-break-countdown">Resume in 05:00</p></div>
+                            </div>
+                        </div>
                         <p class="study-player-error" id="youtube-player-error" role="alert" hidden></p>
                     </section>
                     <div class="study-results" id="youtube-results"></div>
@@ -683,19 +715,30 @@
             play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="m8 5 10 7-10 7V5Z"/></svg>'
         };
         let youtubeSearchRequest = 0;
+        let youtubeSearchResults = [];
         let youtubePlayerApiPromise = null;
         let youtubePlayer = null;
         let selectedYoutubeVideo = null;
+        const youtubeWorkInterval = 25 * 60 * 1000;
+        const youtubeBreakInterval = 5 * 60 * 1000;
+        let youtubeWorkElapsed = 0;
+        let youtubePlaybackStartedAt = 0;
+        let youtubeBreakEndsAt = 0;
+        let youtubeTimerInterval = null;
 
         function readState() {
-            const empty = { progress: {}, completed: [], later: [], history: {} };
+            const empty = { progress: {}, completed: [], later: [], history: {}, youtubeLater: [] };
             try {
                 const saved = JSON.parse(localStorage.getItem(appStateKey) || "{}");
                 return {
                     progress: saved.progress && typeof saved.progress === "object" ? saved.progress : {},
                     completed: Array.isArray(saved.completed) ? saved.completed : [],
                     later: Array.isArray(saved.later) ? saved.later : [],
-                    history: saved.history && typeof saved.history === "object" ? saved.history : {}
+                    history: saved.history && typeof saved.history === "object" ? saved.history : {},
+                    youtubeLater: Array.isArray(saved.youtubeLater) ? saved.youtubeLater.filter((item) =>
+                        item && ["video", "playlist"].includes(item.type) &&
+                        typeof item.id === "string" && typeof item.title === "string"
+                    ) : []
                 };
             } catch { return empty; }
         }
@@ -734,6 +777,46 @@
             state.later = state.later.filter((item) => item !== id);
             saveState();
             showToast("Removed from your lists");
+        }
+
+        function youtubeMediaKey(item) { return `${item.type}:${item.id}`; }
+        function youtubeMediaUrl(item) {
+            return item.type === "playlist"
+                ? `/yt/playlist/${encodeURIComponent(item.id)}`
+                : `/yt/${encodeURIComponent(item.id)}`;
+        }
+        function youtubeCardMarkup(item, removable = false) {
+            const duration = item.type === "video" ? formatDuration(item.duration) : `${Number(item.itemCount) || 0} videos`;
+            return `<article class="study-result">
+                <a class="study-result-link" href="${escapeHtml(youtubeMediaUrl(item))}" target="_blank" rel="noopener noreferrer">
+                    <img loading="lazy" src="${escapeHtml(item.thumbnail || "")}" alt="">
+                    <div class="study-result-copy">
+                        <h2 class="study-result-title">${escapeHtml(item.title)}</h2>
+                        <div class="study-result-meta"><span class="study-result-channel">${escapeHtml(item.channel || "")}</span><span>${escapeHtml(item.type === "playlist" ? "Playlist" : duration)}</span></div>
+                    </div>
+                </a>
+                <button class="youtube-save-button ${removable ? "saved" : ""}" type="button" data-youtube-save="${escapeHtml(youtubeMediaKey(item))}" aria-label="${removable ? "Remove from saved videos" : "Save for later"}">${removable ? "Saved ✓" : "＋ Save"}</button>
+            </article>`;
+        }
+        function renderYoutubeLater() {
+            const catalogLater = sortByRecent(videos.filter((video) => state.later.includes(video.id)));
+            const youtubeLater = [...state.youtubeLater].reverse();
+            const target = document.getElementById("later-grid");
+            const cards = [...catalogLater.map(cardMarkup), ...youtubeLater.map((item) => youtubeCardMarkup(item, true))];
+            target.innerHTML = cards.length
+                ? `<div class="video-grid">${cards.join("")}</div>`
+                : emptyMarkup("Nothing saved for later.", "Save a video or playlist and it will appear here.", "bookmark");
+            setText("later-count", cards.length ? `${cards.length} saved` : "");
+        }
+        function toggleYoutubeSaved(item) {
+            const key = youtubeMediaKey(item);
+            const saved = state.youtubeLater.some((entry) => youtubeMediaKey(entry) === key);
+            state.youtubeLater = saved
+                ? state.youtubeLater.filter((entry) => youtubeMediaKey(entry) !== key)
+                : [item, ...state.youtubeLater];
+            saveState();
+            renderYoutubeResults(youtubeSearchResults);
+            showToast(saved ? "Removed from saved videos" : "Saved for later");
         }
 
         function cardMarkup(video) {
@@ -782,30 +865,103 @@
             renderHome();
             const continueList = sortByRecent(videos.filter((video) => progressFor(video) > 0));
             const completedList = sortByRecent(videos.filter((video) => isCompleted(video.id)));
-            const laterList = sortByRecent(videos.filter((video) => state.later.includes(video.id)));
             const todayList = videos.filter((video) => video.isToday);
             const query = document.getElementById("search-input").value.trim().toLowerCase();
             const searchList = videos.filter((video) => [video.title, video.fileName, video.category, video.subject, video.lectureNumber].filter(Boolean).join(" ").toLowerCase().includes(query));
             renderGrid("continue-grid", continueList, "You haven't started any videos yet.", "Videos you pause before finishing will appear here.", "clock");
             renderGrid("completed-grid", completedList, "No completed videos yet.", "Finish a video and it will appear in your completed list.", "check");
-            renderGrid("later-grid", laterList, "Nothing saved for later.", "Videos saved for later will appear here.", "bookmark");
+            renderYoutubeLater();
             renderGrid("today-grid", todayList, "No lectures for today.", "Today's lecture content will appear here when available.", "clock");
             renderGrid("search-grid", query ? searchList : [], query ? "No videos found." : "Search your collection.", query ? "Try a different title, category, or subject." : "Use the search bar to find a video.", "play");
             setText("continue-count", continueList.length ? `${continueList.length} video${continueList.length === 1 ? "" : "s"}` : "");
-            setText("later-count", laterList.length ? `${laterList.length} saved` : "");
             setText("today-count", todayList.length ? `${todayList.length} today` : "");
             setText("search-count", query ? `${searchList.length} result${searchList.length === 1 ? "" : "s"}` : "");
         }
         function renderYoutubeResults(videos) {
             const target = document.getElementById("youtube-results");
-            target.innerHTML = videos.length ? videos.map((video) => `
-                <button class="study-result" type="button" data-youtube-id="${escapeHtml(video.videoId)}" aria-label="Play ${escapeHtml(video.title)}">
+            target.innerHTML = videos.length ? videos.map((video) => {
+                const playlist = video.type === "playlist";
+                const item = {
+                    type: playlist ? "playlist" : "video",
+                    id: playlist ? video.playlistId : video.videoId,
+                    title: video.title,
+                    channel: video.channel,
+                    thumbnail: video.thumbnail,
+                    duration: video.duration,
+                    itemCount: video.itemCount
+                };
+                const saved = state.youtubeLater.some((entry) => youtubeMediaKey(entry) === youtubeMediaKey(item));
+                return `
+                <article class="study-result" data-youtube-type="${item.type}" data-youtube-id="${escapeHtml(item.id)}" data-youtube-duration="${Number(item.duration) || 0}" data-youtube-item-count="${Number(item.itemCount) || 0}">
+                    <a class="study-result-link" href="${escapeHtml(youtubeMediaUrl(item))}" target="_blank" rel="noopener noreferrer">
                     <img loading="lazy" src="${escapeHtml(video.thumbnail || "")}" alt="">
                     <div class="study-result-copy">
                         <h2 class="study-result-title">${escapeHtml(video.title)}</h2>
-                        <div class="study-result-meta"><span class="study-result-channel">${escapeHtml(video.channel)}</span><span>${escapeHtml(formatDuration(video.duration))}</span></div>
+                        <div class="study-result-meta"><span class="study-result-channel">${escapeHtml(video.channel)}</span><span>${playlist ? `${Number(video.itemCount) || 0} videos · Playlist` : escapeHtml(formatDuration(video.duration))}</span></div>
                     </div>
-                </button>`).join("") : emptyMarkup("No matching study videos", "Try another topic. Only videos available for embedded playback are included.", "play");
+                    </a>
+                    <button class="youtube-save-button ${saved ? "saved" : ""}" type="button" data-youtube-save="${escapeHtml(youtubeMediaKey(item))}" aria-label="${saved ? "Remove from saved videos" : "Save for later"}">${saved ? "Saved ✓" : "＋ Save"}</button>
+                </article>`;
+            }).join("") : emptyMarkup("No matching study videos", "Try another topic. Embeddable videos and playlists are included; Shorts and live streams are excluded.", "play");
+        }
+        function formatCountdown(milliseconds) {
+            const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
+            return `${String(Math.floor(totalSeconds / 60)).padStart(2, "0")}:${String(totalSeconds % 60).padStart(2, "0")}`;
+        }
+        function updateYoutubeTimer() {
+            const now = Date.now();
+            if (youtubeBreakEndsAt) {
+                const remaining = Math.max(0, youtubeBreakEndsAt - now);
+                setText("youtube-player-timer", `Break · ${formatCountdown(remaining)} remaining`);
+                setText("youtube-break-countdown", `Video will resume in ${formatCountdown(remaining)}`);
+                if (remaining === 0) {
+                    youtubeBreakEndsAt = 0;
+                    youtubeWorkElapsed = 0;
+                    document.getElementById("youtube-break-overlay").hidden = true;
+                    if (selectedYoutubeVideo && !document.getElementById("youtube-player-panel").hidden) {
+                        youtubePlayer?.playVideo();
+                    } else {
+                        clearInterval(youtubeTimerInterval);
+                        youtubeTimerInterval = null;
+                    }
+                }
+                return;
+            }
+            if (youtubePlaybackStartedAt) {
+                youtubeWorkElapsed += now - youtubePlaybackStartedAt;
+                youtubePlaybackStartedAt = now;
+                if (youtubeWorkElapsed >= youtubeWorkInterval) {
+                    youtubeWorkElapsed = 0;
+                    youtubePlaybackStartedAt = 0;
+                    youtubeBreakEndsAt = now + youtubeBreakInterval;
+                    document.getElementById("youtube-break-overlay").hidden = false;
+                    setText("youtube-player-timer", `Break · ${formatCountdown(youtubeBreakInterval)} remaining`);
+                    youtubePlayer?.pauseVideo();
+                    return;
+                }
+            }
+            setText("youtube-player-timer", `Play · ${formatCountdown(youtubeWorkInterval - youtubeWorkElapsed)} remaining`);
+        }
+        function startYoutubeTimer() {
+            if (!youtubeTimerInterval) youtubeTimerInterval = setInterval(updateYoutubeTimer, 1000);
+            updateYoutubeTimer();
+        }
+        function handleYoutubePlayerState(event) {
+            if (event.data === window.YT.PlayerState.PLAYING) {
+                if (youtubeBreakEndsAt) {
+                    youtubePlayer.pauseVideo();
+                    return;
+                }
+                if (!youtubePlaybackStartedAt) youtubePlaybackStartedAt = Date.now();
+                startYoutubeTimer();
+            } else {
+                updateYoutubeTimer();
+                youtubePlaybackStartedAt = 0;
+                if (!youtubeBreakEndsAt) {
+                    clearInterval(youtubeTimerInterval);
+                    youtubeTimerInterval = null;
+                }
+            }
         }
         function loadYoutubePlayerApi() {
             if (window.YT && window.YT.Player) return Promise.resolve(window.YT);
@@ -832,20 +988,26 @@
             const panel = document.getElementById("youtube-player-panel");
             const error = document.getElementById("youtube-player-error");
             panel.hidden = false;
+            document.getElementById("view-study").classList.add("study-player-only");
             error.hidden = true;
             setText("youtube-player-title", video.title);
-            panel.scrollIntoView({ behavior: "smooth", block: "start" });
+            const externalLink = document.getElementById("youtube-player-external");
+            externalLink.href = `https://www.yout-ube.com/watch?v=${encodeURIComponent(video.videoId)}`;
+            document.getElementById("youtube-break-overlay").hidden = !youtubeBreakEndsAt;
+            if (youtubeBreakEndsAt) updateYoutubeTimer();
             try {
                 const api = await loadYoutubePlayerApi();
                 if (!selectedYoutubeVideo || selectedYoutubeVideo.videoId !== video.videoId) return;
                 if (youtubePlayer) {
-                    youtubePlayer.loadVideoById(video.videoId);
+                    if (youtubeBreakEndsAt) youtubePlayer.cueVideoById(video.videoId);
+                    else youtubePlayer.loadVideoById(video.videoId);
                     return;
                 }
                 youtubePlayer = new api.Player("youtube-player-frame", {
                     videoId: video.videoId,
                     playerVars: { autoplay: 1, controls: 1, playsinline: 1, rel: 0, modestbranding: 1 },
                     events: {
+                        onStateChange: handleYoutubePlayerState,
                         onError(event) {
                             const message = [101, 150].includes(event.data)
                                 ? "This video cannot be played here because embedding is disabled."
@@ -858,6 +1020,17 @@
             } catch {
                 setText("youtube-player-error", "The embedded player could not be loaded. Please try again.");
                 error.hidden = false;
+            }
+        }
+        function closeYoutubePlayer() {
+            document.getElementById("youtube-player-panel").hidden = true;
+            document.getElementById("view-study").classList.remove("study-player-only");
+            updateYoutubeTimer();
+            youtubePlaybackStartedAt = 0;
+            youtubePlayer?.pauseVideo();
+            if (!youtubeBreakEndsAt) {
+                clearInterval(youtubeTimerInterval);
+                youtubeTimerInterval = null;
             }
         }
         async function searchYoutube(event) {
@@ -875,8 +1048,9 @@
                 if (!response.ok) throw new Error(data.detail || "YouTube search is temporarily unavailable.");
                 if (requestId !== youtubeSearchRequest) return;
                 const videos = Array.isArray(data.videos) ? data.videos : [];
+                youtubeSearchResults = videos;
                 renderYoutubeResults(videos);
-                status.textContent = `${videos.length} video${videos.length === 1 ? "" : "s"} found. Channels, playlists, Shorts-length videos, and live streams are excluded.`;
+                status.textContent = `${videos.length} results found. Shorts (3 minutes or shorter), channels, and live streams are excluded. Videos and playlists are included.`;
             } catch (error) {
                 if (requestId !== youtubeSearchRequest) return;
                 status.textContent = error.message || "YouTube search is temporarily unavailable.";
@@ -907,6 +1081,29 @@
                     const id = bookmark.dataset.bookmark;
                     state.later = state.later.includes(id) ? state.later.filter((item) => item !== id) : [id, ...state.later];
                     saveState(); showToast(state.later.includes(id) ? "Saved for later" : "Removed from later");
+                    return;
+                }
+                const youtubeSave = event.target.closest("[data-youtube-save]");
+                if (youtubeSave) {
+                    event.preventDefault(); event.stopPropagation();
+                    const key = youtubeSave.dataset.youtubeSave;
+                    const existing = state.youtubeLater.find((item) => youtubeMediaKey(item) === key);
+                    if (existing) {
+                        toggleYoutubeSaved(existing);
+                    } else {
+                        const card = youtubeSave.closest(".study-result");
+                        const type = card.dataset.youtubeType;
+                        const image = card.querySelector("img");
+                        toggleYoutubeSaved({
+                            type,
+                            id: card.dataset.youtubeId,
+                            title: card.querySelector(".study-result-title").textContent,
+                            channel: card.querySelector(".study-result-channel").textContent,
+                            thumbnail: image?.src || "",
+                            duration: Number(card.dataset.youtubeDuration) || 0,
+                            itemCount: Number(card.dataset.youtubeItemCount) || 0
+                        });
+                    }
                 }
             });
             document.getElementById("search-input").addEventListener("input", (event) => {
@@ -916,13 +1113,7 @@
             });
             document.getElementById("clear-search").addEventListener("click", () => { const input = document.getElementById("search-input"); input.value = ""; input.classList.remove("has-value"); document.getElementById("clear-search").classList.remove("visible"); renderAll(); input.focus(); });
             document.getElementById("youtube-search-form").addEventListener("submit", searchYoutube);
-            document.getElementById("youtube-results").addEventListener("click", (event) => {
-                const result = event.target.closest("[data-youtube-id]");
-                if (!result) return;
-                const videoId = result.dataset.youtubeId;
-                const title = result.querySelector(".study-result-title").textContent;
-                playYoutubeVideo({ videoId, title });
-            });
+            document.getElementById("youtube-player-close").addEventListener("click", closeYoutubePlayer);
             document.getElementById("link-form").addEventListener("submit", (event) => {
                 event.preventDefault(); const input = document.getElementById("video-link"); const error = document.getElementById("form-error"); const value = input.value.trim(); error.textContent = "";
                 try { const url = new URL(value, window.location.origin); if (url.origin !== window.location.origin || !url.pathname.startsWith("/show/")) throw new Error("unsupported"); window.location.href = url.href; }
