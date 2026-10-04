@@ -8,6 +8,10 @@ import traceback
 import uvicorn
 import re
 import logging
+import json
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 from html import escape
@@ -613,6 +617,108 @@ async def telegram_web_logout():
     response = JSONResponse({"status": "ok"})
     response.delete_cookie("karva_session")
     return response
+
+def _youtube_api_get(endpoint: str, params: dict) -> dict:
+    query = urllib.parse.urlencode({**params, "key": Config.YOUTUBE_API_KEY})
+    request = urllib.request.Request(
+        f"https://www.googleapis.com/youtube/v3/{endpoint}?{query}",
+        headers={"Accept": "application/json"},
+    )
+    with urllib.request.urlopen(request, timeout=10) as response:
+        return json.load(response)
+
+def _youtube_duration_seconds(duration: str) -> int:
+    match = re.fullmatch(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", duration or "")
+    if not match:
+        return 0
+    hours, minutes, seconds = (int(value or 0) for value in match.groups())
+    return hours * 3600 + minutes * 60 + seconds
+
+@app.get("/api/youtube/search", response_class=JSONResponse)
+async def search_youtube_videos(request: Request, q: str):
+    """Search embeddable, non-live YouTube videos at least four minutes long."""
+    if await get_web_user_id(request) is None:
+        raise HTTPException(status_code=401, detail="Open the website from the Telegram bot to search videos.")
+    query = q.strip()
+    if not query or len(query) > 100:
+        raise HTTPException(status_code=400, detail="Enter a search term of 1 to 100 characters.")
+    if not Config.YOUTUBE_API_KEY:
+        raise HTTPException(status_code=503, detail="YouTube search is not configured.")
+
+    search_params = {
+        "part": "snippet",
+        "type": "video",
+        "q": query,
+        "maxResults": 50,
+        "safeSearch": "strict",
+        "videoEmbeddable": "true",
+        "videoDuration": "any",
+    }
+    try:
+        results = await asyncio.to_thread(_youtube_api_get, "search", search_params)
+        candidates = []
+        for item in results.get("items", []):
+            video_id = item.get("id", {}).get("videoId", "")
+            snippet = item.get("snippet", {})
+            if (
+                item.get("id", {}).get("kind") != "youtube#video"
+                or not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id)
+                or snippet.get("liveBroadcastContent", "none") != "none"
+            ):
+                continue
+            candidates.append((video_id, snippet))
+
+        if not candidates:
+            return {"videos": []}
+
+        details = await asyncio.to_thread(
+            _youtube_api_get,
+            "videos",
+            {
+                "part": "contentDetails,snippet,liveStreamingDetails",
+                "id": ",".join(video_id for video_id, _ in candidates),
+                "maxResults": len(candidates),
+            },
+        )
+    except urllib.error.HTTPError as error:
+        logging.warning("YouTube Data API returned HTTP %s", error.code)
+        raise HTTPException(status_code=502, detail="YouTube search is temporarily unavailable.") from error
+    except (urllib.error.URLError, OSError, json.JSONDecodeError, ValueError) as error:
+        logging.warning("YouTube Data API request failed: %s", type(error).__name__)
+        raise HTTPException(status_code=502, detail="YouTube search is temporarily unavailable.") from error
+
+    detail_by_id = {
+        item.get("id"): item
+        for item in details.get("items", [])
+        if item.get("id") and not item.get("liveStreamingDetails")
+        and item.get("snippet", {}).get("liveBroadcastContent", "none") == "none"
+    }
+    videos = []
+    for video_id, snippet in candidates:
+        video = detail_by_id.get(video_id)
+        if not video:
+            continue
+        duration = _youtube_duration_seconds(video.get("contentDetails", {}).get("duration", ""))
+        if duration < 240:
+            continue
+        thumbnails = snippet.get("thumbnails", {})
+        thumbnail = (
+            thumbnails.get("high")
+            or thumbnails.get("medium")
+            or thumbnails.get("default")
+            or {}
+        ).get("url")
+        videos.append({
+            "videoId": video_id,
+            "title": snippet.get("title", ""),
+            "channel": snippet.get("channelTitle", ""),
+            "thumbnail": thumbnail,
+            "duration": duration,
+        })
+        if len(videos) == 15:
+            break
+
+    return {"videos": videos}
 
 def _catalog_title(file_name: str) -> str:
     """Keep the original filename visible while removing only its extension."""
