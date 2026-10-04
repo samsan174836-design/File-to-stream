@@ -676,6 +676,7 @@
                 <button class="nav-item" data-view="completed"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m5 12 4 4L19 6"/></svg></span>Completed</button>
                 <button class="nav-item" data-view="later"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M6 4h12v16l-6-3.5L6 20V4Z"/></svg></span>Later Lecture</button>
                 <button class="nav-item" data-view="today"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 10h16"/></svg></span>Today Lecture</button>
+                <button class="nav-item" data-view="all-lecture"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span>All Lecture</button>
                 <button class="nav-item" data-view="search"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="10.8" cy="10.8" r="5.8"/><path d="m16 16 4 4"/></svg></span>Search</button>
                 <button class="nav-item" data-view="study"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21V5.5Z"/><path d="M4 17a2.5 2.5 0 0 1 2.5-2.5H20M9 7h7"/></svg></span>Study & Knowledge</button>
             </nav>
@@ -720,7 +721,8 @@
                 <section class="view" id="view-continue" data-view-panel="continue"><div class="page-title"><div><h1>Continue watching</h1><p>Pick up exactly where you paused.</p></div><span class="result-count" id="continue-count"></span></div><div id="continue-grid"></div></section>
                 <section class="view" id="view-completed" data-view-panel="completed"><div class="page-title"><div><h1>Completed</h1><p>Your finished videos, all in one place.</p></div><button class="secondary-btn" id="clear-completed" type="button">Clear completed</button></div><div id="completed-grid"></div></section>
                 <section class="view" id="view-later" data-view-panel="later"><div class="page-title"><div><h1>Later Lecture</h1><p>Save any video here for your next watch.</p></div><span class="result-count" id="later-count"></span></div><div id="later-grid"></div></section>
-                <section class="view" id="view-today" data-view-panel="today"><div class="page-title"><div><h1>Today Lecture</h1><p>Fresh content assigned to today.</p></div><span class="result-count" id="today-count"></span></div><div id="today-grid"></div></section>
+                <section class="view" id="view-today" data-view-panel="today"><div class="page-title"><div><h1>Today Lecture</h1><p>Videos sent to the bot in the last 24 hours.</p></div><span class="result-count" id="today-count"></span></div><div id="today-grid"></div></section>
+                <section class="view" id="view-all-lecture" data-view-panel="all-lecture"><div class="page-title"><div><h1>All Lecture</h1><p>All videos you have sent to the bot.</p></div><span class="result-count" id="all-lecture-count"></span></div><div id="all-lecture-grid"></div></section>
                 <section class="view" id="view-search" data-view-panel="search"><div class="page-title"><div><h1>Search</h1><p>Find a title, subject, category, or filename.</p></div><span class="result-count" id="search-count"></span></div><div id="search-grid"></div></section>
                 <section class="view" id="view-study" data-view-panel="study">
                     <div class="page-title"><div><h1>Study & Knowledge</h1><p>Search YouTube videos and playlists, save them for later, and open them in a focused player.</p></div></div>
@@ -779,8 +781,9 @@
         const startupState = "{{ 'ready' if bot_ready else 'starting' }}";
         let videos = [];
         let authRequired = false;
-        const viewPaths = { home: "/", continue: "/continue", completed: "/completed", later: "/later", today: "/today", search: "/", study: "/" };
-        const pathViews = { "/": "home", "/home": "home", "/continue": "continue", "/completed": "completed", "/later": "later", "/today": "today" };
+        let recentLectureRefreshTimer = null;
+        const viewPaths = { home: "/", continue: "/continue", completed: "/completed", later: "/later", today: "/today", "all-lecture": "/all-lecture", search: "/", study: "/" };
+        const pathViews = { "/": "home", "/home": "home", "/continue": "continue", "/completed": "completed", "/later": "later", "/today": "today", "/all-lecture": "all-lecture" };
         let activeView = pathViews[window.location.pathname] || window.location.hash.slice(1) || "{{ initial_view|default('home') }}";
         let state = readState();
         const icons = {
@@ -951,19 +954,35 @@
         function sortByRecent(list) {
             return [...list].sort((a, b) => (state.history[b.id] || b.createdAt || "").toString().localeCompare((state.history[a.id] || a.createdAt || "").toString()));
         }
+        function isRecentLecture(video, now = Date.now()) {
+            const createdAt = Date.parse(video.createdAt || "");
+            return video.isVideo && Number.isFinite(createdAt) && createdAt <= now && now - createdAt < 24 * 60 * 60 * 1000;
+        }
+        function scheduleRecentLectureRefresh() {
+            window.clearTimeout(recentLectureRefreshTimer);
+            const now = Date.now();
+            const nextExpiry = videos
+                .filter((video) => video.isVideo)
+                .map((video) => Date.parse(video.createdAt || "") + 24 * 60 * 60 * 1000)
+                .filter((expiresAt) => Number.isFinite(expiresAt) && expiresAt > now)
+                .sort((a, b) => a - b)[0];
+            if (nextExpiry) {
+                recentLectureRefreshTimer = window.setTimeout(renderAll, nextExpiry - now + 1);
+            }
+        }
         function renderHome() {
             if (authRequired) {
                 document.getElementById("home-sections").innerHTML = `<section class="section"><div class="empty-state"><div><div class="empty-state-icon">${icons.bookmark}</div><strong>Private library locked</strong><p>Send /website to your Telegram bot, then enter the login link it sends you.</p><button class="primary-btn" type="button" data-open-login>Enter login link</button></div></div></section>`;
                 return;
             }
             const continueList = sortByRecent(videos.filter((video) => progressFor(video) > 0));
-            const todayList = videos.filter((video) => video.isToday);
+            const todayList = videos.filter((video) => isRecentLecture(video));
             const recentList = sortByRecent(videos.filter((video) => state.history[video.id])).slice(0, 6);
             const laterList = videos.filter((video) => state.later.includes(video.id));
             const latestList = videos.slice(0, 6);
             const sections = [];
             if (continueList.length) sections.push(`<section class="section"><div class="section-heading"><div><h2>Continue watching</h2><p>Pick up where you paused.</p></div><button class="section-link" data-view="continue">See all</button></div><div class="video-grid">${continueList.slice(0, 6).map(cardMarkup).join("")}</div></section>`);
-            if (todayList.length) sections.push(`<section class="section"><div class="section-heading"><div><h2>Today's lectures</h2><p>Fresh content for today.</p></div><button class="section-link" data-view="today">See all</button></div><div class="video-grid">${todayList.slice(0, 6).map(cardMarkup).join("")}</div></section>`);
+            if (todayList.length) sections.push(`<section class="section"><div class="section-heading"><div><h2>Today's lectures</h2><p>Videos sent in the last 24 hours.</p></div><button class="section-link" data-view="today">See all</button></div><div class="video-grid">${todayList.slice(0, 6).map(cardMarkup).join("")}</div></section>`);
             if (recentList.length) sections.push(`<section class="section"><div class="section-heading"><div><h2>Recently watched</h2><p>Your latest viewing history.</p></div></div><div class="video-grid">${recentList.map(cardMarkup).join("")}</div></section>`);
             if (laterList.length) sections.push(`<section class="section"><div class="section-heading"><div><h2>Watch later</h2><p>Saved for another moment.</p></div><button class="section-link" data-view="later">See all</button></div><div class="video-grid">${laterList.slice(0, 6).map(cardMarkup).join("")}</div></section>`);
             if (latestList.length) sections.push(`<section class="section"><div class="section-heading"><div><h2>Latest videos</h2><p>Your available collection.</p></div></div><div class="video-grid">${latestList.map(cardMarkup).join("")}</div></section>`);
@@ -973,17 +992,21 @@
             renderHome();
             const continueList = sortByRecent(videos.filter((video) => progressFor(video) > 0));
             const completedList = sortByRecent(videos.filter((video) => isCompleted(video.id)));
-            const todayList = videos.filter((video) => video.isToday);
+            const todayList = videos.filter((video) => isRecentLecture(video));
+            const allLectureList = sortByRecent(videos.filter((video) => video.isVideo));
             const query = document.getElementById("search-input").value.trim().toLowerCase();
             const searchList = videos.filter((video) => [video.title, video.fileName, video.category, video.subject, video.lectureNumber].filter(Boolean).join(" ").toLowerCase().includes(query));
             renderGrid("continue-grid", continueList, "You haven't started any videos yet.", "Videos you pause before finishing will appear here.", "clock");
             renderGrid("completed-grid", completedList, "No completed videos yet.", "Finish a video and it will appear in your completed list.", "check");
             renderYoutubeLater();
-            renderGrid("today-grid", todayList, "No lectures for today.", "Today's lecture content will appear here when available.", "clock");
+            renderGrid("today-grid", todayList, "No recent lectures.", "Videos sent to the bot in the last 24 hours will appear here.", "clock");
+            renderGrid("all-lecture-grid", allLectureList, "No lectures yet.", "Videos you send to the bot will appear here.", "play");
             renderGrid("search-grid", query ? searchList : [], query ? "No videos found." : "Search your collection.", query ? "Try a different title, category, or subject." : "Use the search bar to find a video.", "play");
             setText("continue-count", continueList.length ? `${continueList.length} video${continueList.length === 1 ? "" : "s"}` : "");
             setText("today-count", todayList.length ? `${todayList.length} today` : "");
+            setText("all-lecture-count", allLectureList.length ? `${allLectureList.length} video${allLectureList.length === 1 ? "" : "s"}` : "");
             setText("search-count", query ? `${searchList.length} result${searchList.length === 1 ? "" : "s"}` : "");
+            scheduleRecentLectureRefresh();
         }
         function renderYoutubeResults(videos) {
             const target = document.getElementById("youtube-results");
@@ -1165,7 +1188,7 @@
             }
         }
         function setView(view, updateHash = true) {
-            const valid = ["home", "continue", "completed", "later", "today", "search", "study"];
+            const valid = ["home", "continue", "completed", "later", "today", "all-lecture", "search", "study"];
             activeView = valid.includes(view) ? view : "home";
             document.querySelectorAll("[data-view-panel]").forEach((panel) => panel.classList.toggle("active", panel.dataset.viewPanel === activeView));
             document.querySelectorAll("[data-view]").forEach((item) => item.classList.toggle("active", item.dataset.view === activeView));

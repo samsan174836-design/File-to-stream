@@ -31,6 +31,8 @@
         .break-overlay h2 { margin: 0 0 8px; font-size: clamp(26px, 6vw, 48px); }
         .break-overlay p { margin: 7px 0 0; color: #d5e2d9; font-size: 15px; }
         .player-error { margin: 12px auto 0; color: #ffb7b7; font-size: 13px; text-align: center; }
+        .keyboard-help { width: min(100%, 1400px); margin: 12px auto 0; color: #b9c4bc; font-size: 12px; text-align: center; }
+        .keyboard-help kbd { padding: 2px 5px; border: 1px solid #43564a; border-radius: 4px; color: #e9f6ed; background: #111913; font: inherit; }
         @media (max-width: 600px) {
             .player-page { padding: 14px; }
             .player-header { flex-wrap: wrap; gap: 10px; }
@@ -64,6 +66,7 @@
                 <div><h2>Break time</h2><p>REST &amp; WALK &amp; HYDRIATE YOUR SELF... GET BACK IN 5 min.</p><p id="break-countdown">05:00</p></div>
             </div>
         </div>
+        <p class="keyboard-help"><kbd>Space</kbd>/<kbd>K</kbd> play/pause · <kbd>←</kbd>/<kbd>→</kbd> 5s seek · <kbd>J</kbd>/<kbd>L</kbd> 10s seek · <kbd>↑</kbd>/<kbd>↓</kbd> volume · <kbd>M</kbd> mute · <kbd>F</kbd> fullscreen · <kbd>0</kbd>–<kbd>9</kbd> jump</p>
         <p class="player-error" id="player-error" role="alert" hidden></p>
     </main>
     <script>
@@ -72,6 +75,7 @@
         const workDuration = 25 * 60 * 1000;
         const breakDuration = 5 * 60 * 1000;
         let player;
+        let playerReady = false;
         let pomodoroPhase = "idle";
         let pomodoroCycle = 0;
         let pomodoroRunning = false;
@@ -175,6 +179,70 @@
                 player.pauseVideo();
             }
         }
+        function toggleVideoPlayback() {
+            if (!playerReady) return;
+            if (player.getPlayerState() === window.YT.PlayerState.PLAYING) player.pauseVideo();
+            else player.playVideo();
+        }
+        function seekVideoBy(seconds) {
+            if (!playerReady) return;
+            const duration = player.getDuration();
+            const currentTime = player.getCurrentTime();
+            player.seekTo(Math.max(0, Math.min(duration, currentTime + seconds)), true);
+        }
+        function toggleVideoFullscreen() {
+            if (!playerReady) return;
+            const iframe = player.getIframe();
+            if (document.fullscreenElement) {
+                document.exitFullscreen().catch(() => {});
+            } else if (iframe.requestFullscreen) {
+                iframe.requestFullscreen().catch(() => {});
+            }
+        }
+        document.addEventListener("keydown", (event) => {
+            if (event.altKey || event.ctrlKey || event.metaKey || event.defaultPrevented) return;
+            const target = event.target;
+            if (
+                target instanceof HTMLElement
+                && (target.isContentEditable
+                    || target.closest("button, input, select, textarea, a, [role='button']"))
+            ) return;
+
+            const key = event.key.toLowerCase();
+            if (
+                ![" ", "spacebar", "k", "arrowleft", "arrowright", "arrowup", "arrowdown", "j", "l", "m", "f", "home", "end"]
+                    .includes(key)
+                && !/^[0-9]$/.test(key)
+            ) return;
+
+            event.preventDefault();
+            if (key === " " || key === "spacebar" || key === "k") {
+                toggleVideoPlayback();
+            } else if (key === "arrowleft") {
+                seekVideoBy(-5);
+            } else if (key === "arrowright") {
+                seekVideoBy(5);
+            } else if (key === "j") {
+                seekVideoBy(-10);
+            } else if (key === "l") {
+                seekVideoBy(10);
+            } else if (key === "arrowup" || key === "arrowdown") {
+                if (playerReady) player.setVolume(Math.max(0, Math.min(100, player.getVolume() + (key === "arrowup" ? 5 : -5))));
+            } else if (key === "m") {
+                if (playerReady) {
+                    if (player.isMuted()) player.unMute();
+                    else player.mute();
+                }
+            } else if (key === "f") {
+                toggleVideoFullscreen();
+            } else if (key === "home") {
+                if (playerReady) player.seekTo(0, true);
+            } else if (key === "end") {
+                if (playerReady) player.seekTo(player.getDuration(), true);
+            } else if (/^[0-9]$/.test(key)) {
+                if (playerReady) player.seekTo(player.getDuration() * Number(key) / 10, true);
+            }
+        });
         function onYouTubeIframeAPIReady() {
             const playerVars = {
                 autoplay: 1,
@@ -190,6 +258,9 @@
                 ...(mediaType === "video" ? { videoId: mediaId } : {}),
                 playerVars,
                 events: {
+                    onReady() {
+                        playerReady = true;
+                    },
                     onStateChange: onPlayerState,
                     onError(event) {
                         const error = document.getElementById("player-error");

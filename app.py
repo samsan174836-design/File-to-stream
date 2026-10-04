@@ -9,6 +9,7 @@ import uvicorn
 import re
 import logging
 import json
+import mimetypes
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -762,6 +763,7 @@ async def pwa_service_worker():
 @app.get("/completed", response_class=HTMLResponse)
 @app.get("/later", response_class=HTMLResponse)
 @app.get("/today", response_class=HTMLResponse)
+@app.get("/all-lecture", response_class=HTMLResponse)
 async def library_section_page(request: Request):
     section = request.url.path.strip("/") or "home"
     return templates.TemplateResponse(
@@ -1016,7 +1018,7 @@ def _catalog_category(file_name: str, mime_type: str) -> str:
         return "Audio"
     return "Entertainment"
 
-async def _catalog_item(link, main_bot, today, semaphore):
+async def _catalog_item(link, main_bot, recent_cutoff, semaphore):
     unique_id = str(link.get("_id", ""))
     message_id = link.get("message_id")
     if not unique_id or not message_id:
@@ -1029,8 +1031,16 @@ async def _catalog_item(link, main_bot, today, semaphore):
             return None
         file_name = media.file_name or "Untitled video"
         mime_type = media.mime_type or "application/octet-stream"
-        created_at = message.date.isoformat() if message.date else None
-        message_day = message.date.astimezone(ZoneInfo("Asia/Kolkata")).date() if message.date else None
+        inferred_mime_type, _ = mimetypes.guess_type(file_name)
+        message_date = message.date
+        if message_date and message_date.tzinfo is None:
+            message_date = message_date.replace(tzinfo=timezone.utc)
+        created_at = message_date.isoformat() if message_date else None
+        is_video = (
+            bool(message.video)
+            or mime_type.startswith("video/")
+            or bool(inferred_mime_type and inferred_mime_type.startswith("video/"))
+        )
         return {
             "id": unique_id,
             "title": _catalog_title(file_name),
@@ -1042,7 +1052,8 @@ async def _catalog_item(link, main_bot, today, semaphore):
             "subject": None,
             "lectureNumber": None,
             "createdAt": created_at,
-            "isToday": message_day == today,
+            "isRecent": bool(message_date and message_date >= recent_cutoff),
+            "isVideo": is_video,
             "mimeType": mime_type,
             "fileSize": media.file_size,
         }
@@ -1066,11 +1077,11 @@ async def get_catalog(request: Request):
     if not main_bot:
         return {"status": "starting", "videos": []}
 
-    today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+    recent_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     semaphore = asyncio.Semaphore(8)
     items = await asyncio.gather(*(
-        _catalog_item(link, main_bot, today, semaphore)
-        for link in await db.list_ready_links(limit=100, user_id=user_id)
+        _catalog_item(link, main_bot, recent_cutoff, semaphore)
+        for link in await db.list_ready_links(user_id=user_id)
     ))
     videos = [item for item in items if item]
 

@@ -239,7 +239,7 @@ class Database:
             return doc.get('message_id') if doc else None
         return None
 
-    async def list_ready_links(self, limit=100, user_id=None):
+    async def list_ready_links(self, limit=None, user_id=None):
         """Return link records that can be shown in the browser catalog."""
         if self.collection is None:
             return []
@@ -250,7 +250,9 @@ class Database:
         cursor = self.collection.find(
             query,
             {"_id": 1, "message_id": 1},
-        ).sort("_id", -1).limit(limit)
+        ).sort("message_id", -1)
+        if limit is not None:
+            cursor = cursor.limit(limit)
         return await cursor.to_list(length=limit)
 
 db = Database()
