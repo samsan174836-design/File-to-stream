@@ -50,6 +50,9 @@ class Database:
             await self.web_sessions.create_index(
                 "expires_at", expireAfterSeconds=0, name="web_session_expiry"
             )
+            await self.web_sessions.create_index(
+                "session_id", unique=True, sparse=True, name="web_session_id"
+            )
             print("✅ Database connection established.")
         else:
             self.db = None
@@ -208,23 +211,24 @@ class Database:
         return int(user_id) if user_id is not None else None
 
     async def create_web_session(self, user_id, lifetime_days=3650):
-        """Create a long-lived browser session tied to the current browser cookie."""
+        """Replace the Telegram user's active browser session with a new one."""
         if self.web_sessions is None:
             return None
         session_id = secrets.token_urlsafe(32)
-        await self.web_sessions.insert_one({
-            "_id": session_id,
+        await self.web_sessions.replace_one({"_id": f"telegram:{user_id}"}, {
+            "_id": f"telegram:{user_id}",
             "user_id": user_id,
+            "session_id": session_id,
             "expires_at": datetime.now(timezone.utc) + timedelta(days=lifetime_days),
-        })
+        }, upsert=True)
         return session_id
 
     async def get_web_session_user(self, session_id):
-        """Resolve a browser session to its Telegram user ID."""
+        """Resolve the current active browser session to its Telegram user ID."""
         if self.web_sessions is None or not session_id:
             return None
         session = await self.web_sessions.find_one({
-            "_id": session_id,
+            "session_id": session_id,
             "expires_at": {"$gt": datetime.now(timezone.utc)},
         })
         return session.get("user_id") if session else None

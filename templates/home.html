@@ -601,6 +601,65 @@
                 transition-duration: .01ms !important;
             }
         }
+        .health-pill {
+            font-family: inherit;
+            cursor: pointer;
+        }
+        .health-pill:disabled {
+            cursor: default;
+        }
+        .login-dialog {
+            width: min(440px, calc(100% - 32px));
+            padding: 26px;
+            border: 1px solid var(--line);
+            border-radius: 20px;
+            color: var(--ink);
+            background: var(--paper);
+            box-shadow: var(--shadow);
+        }
+        .login-dialog::backdrop {
+            background: rgba(35, 27, 45, .48);
+            backdrop-filter: blur(4px);
+        }
+        .login-dialog h2 {
+            margin: 0 0 8px;
+            color: var(--green-900);
+            font-family: Georgia, "Times New Roman", serif;
+            font-size: 25px;
+            font-weight: 500;
+        }
+        .login-dialog p {
+            margin: 0 0 18px;
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.55;
+        }
+        .login-dialog input {
+            width: 100%;
+            min-height: 44px;
+            padding: 0 12px;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            outline: 0;
+            color: var(--ink);
+            background: var(--canvas);
+            font-size: 13px;
+        }
+        .login-dialog input:focus {
+            border-color: #a38bc3;
+            box-shadow: 0 0 0 4px rgba(116, 85, 168, .11);
+        }
+        .login-dialog-error {
+            min-height: 18px;
+            margin: 7px 0 12px !important;
+            color: var(--danger) !important;
+            font-size: 11px !important;
+        }
+        .login-dialog-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+        }
     </style>
 </head>
 <body>
@@ -632,7 +691,7 @@
                     <button class="clear-search" id="clear-search" aria-label="Clear search">×</button>
                 </div>
                 <div class="topbar-right">
-                    <div class="health-pill{% if bot_ready %} ready{% endif %}" id="health-pill"><span class="health-dot"></span><span id="health-label">{% if bot_ready %}Ready to stream{% else %}Getting ready{% endif %}</span></div>
+                    <button class="health-pill{% if bot_ready %} ready{% endif %}" id="health-pill" type="button" disabled><span class="health-dot"></span><span id="health-label">{% if bot_ready %}Ready to stream{% else %}Getting ready{% endif %}</span></button>
                 </div>
             </header>
 
@@ -700,6 +759,18 @@
         <button class="nav-item" data-view="search"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="10.8" cy="10.8" r="5.8"/><path d="m16 16 4 4"/></svg></span>Search</button>
         <button class="nav-item" data-view="study"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21V5.5Z"/><path d="M4 17a2.5 2.5 0 0 1 2.5-2.5H20M9 7h7"/></svg></span>Study</button>
     </nav>
+    <dialog class="login-dialog" id="login-dialog" aria-labelledby="login-dialog-title">
+        <form id="login-form" novalidate>
+            <h2 id="login-dialog-title">Unlock your private library</h2>
+            <p>In your Telegram bot, send <strong>/website</strong>, then paste the login link it sends here.</p>
+            <input id="login-link" type="text" inputmode="url" autocomplete="url" placeholder="Paste your Telegram login link" aria-label="Telegram login link" required>
+            <p class="login-dialog-error" id="login-error" role="alert"></p>
+            <div class="login-dialog-actions">
+                <button class="secondary-btn" id="login-cancel" type="button">Cancel</button>
+                <button class="primary-btn" type="submit">Unlock library</button>
+            </div>
+        </form>
+    </dialog>
     <div class="toast" id="toast" role="status"></div>
 
     <script>
@@ -841,6 +912,38 @@
         function emptyMarkup(title, message, icon = "clock") {
             return `<div class="empty-state"><div><div class="empty-state-icon">${icons[icon] || icons.clock}</div><strong>${escapeHtml(title)}</strong><p>${escapeHtml(message)}</p></div></div>`;
         }
+        function openLoginDialog() {
+            const dialog = document.getElementById("login-dialog");
+            document.getElementById("login-error").textContent = "";
+            dialog.showModal();
+            document.getElementById("login-link").focus();
+        }
+        function requireLogin() {
+            authRequired = true;
+            videos = [];
+            try {
+                localStorage.removeItem(catalogCacheKey);
+            } catch (error) {
+                console.warn("The saved catalog cache could not be cleared.", error);
+            }
+            const healthPill = document.getElementById("health-pill");
+            healthPill.disabled = false;
+            healthPill.setAttribute("aria-haspopup", "dialog");
+            document.getElementById("health-label").textContent = "Private login required";
+            setView("home", false);
+            renderAll();
+        }
+        async function checkWebSession() {
+            if (authRequired) return;
+            try {
+                const response = await fetch("/auth/session", { cache: "no-store" });
+                if (!response.ok) throw new Error("session check unavailable");
+                const data = await response.json();
+                if (!data.authenticated) requireLogin();
+            } catch (error) {
+                console.warn("The browser session could not be checked.", error);
+            }
+        }
         function renderGrid(targetId, list, emptyTitle, emptyMessage, icon) {
             const target = document.getElementById(targetId); if (!target) return;
             target.innerHTML = list.length ? `<div class="video-grid">${list.map(cardMarkup).join("")}</div>` : emptyMarkup(emptyTitle, emptyMessage, icon);
@@ -850,7 +953,7 @@
         }
         function renderHome() {
             if (authRequired) {
-                document.getElementById("home-sections").innerHTML = `<section class="section">${emptyMarkup("Private library locked", "Open the website from your Telegram bot using /website to securely view your videos and links.", "bookmark")}</section>`;
+                document.getElementById("home-sections").innerHTML = `<section class="section"><div class="empty-state"><div><div class="empty-state-icon">${icons.bookmark}</div><strong>Private library locked</strong><p>Send /website to your Telegram bot, then enter the login link it sends you.</p><button class="primary-btn" type="button" data-open-login>Enter login link</button></div></div></section>`;
                 return;
             }
             const continueList = sortByRecent(videos.filter((video) => progressFor(video) > 0));
@@ -1071,7 +1174,39 @@
             window.scrollTo({ top: 0, behavior: "smooth" });
         }
         function bindEvents() {
+            const loginDialog = document.getElementById("login-dialog");
+            window.setInterval(checkWebSession, 15000);
+            window.addEventListener("focus", checkWebSession);
+            document.getElementById("health-pill").addEventListener("click", openLoginDialog);
+            document.getElementById("login-cancel").addEventListener("click", () => loginDialog.close());
+            loginDialog.addEventListener("click", (event) => {
+                if (event.target === loginDialog) loginDialog.close();
+            });
+            document.getElementById("login-form").addEventListener("submit", (event) => {
+                event.preventDefault();
+                const input = document.getElementById("login-link");
+                const error = document.getElementById("login-error");
+                error.textContent = "";
+                try {
+                    const loginUrl = new URL(input.value.trim(), window.location.origin);
+                    const token = loginUrl.searchParams.get("token");
+                    if (!["http:", "https:"].includes(loginUrl.protocol)
+                        || loginUrl.pathname !== "/auth/telegram"
+                        || !token) {
+                        throw new Error("invalid login link");
+                    }
+                    window.location.assign(`/auth/telegram?token=${encodeURIComponent(token)}`);
+                } catch {
+                    error.textContent = "Paste the complete login link sent by your Telegram bot.";
+                    input.focus();
+                }
+            });
             document.addEventListener("click", (event) => {
+                const openLogin = event.target.closest("[data-open-login]");
+                if (openLogin) {
+                    openLoginDialog();
+                    return;
+                }
                 const nav = event.target.closest("[data-view]");
                 if (nav) { event.preventDefault(); setView(nav.dataset.view); return; }
                 const remove = event.target.closest("[data-remove]");
@@ -1144,15 +1279,7 @@
             try {
                 const response = await fetch("/api/catalog");
                 if (response.status === 401) {
-                    authRequired = true;
-                    videos = [];
-                    try {
-                        localStorage.removeItem(catalogCacheKey);
-                    } catch (error) {
-                        console.warn("The saved catalog cache could not be cleared.", error);
-                    }
-                    document.getElementById("health-label").textContent = "Private login required";
-                    renderAll();
+                    requireLogin();
                     return;
                 }
                 if (!response.ok) throw new Error("catalog unavailable");

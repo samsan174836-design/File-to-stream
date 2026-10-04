@@ -807,6 +807,10 @@ async def get_web_user_id(request: Request):
     """Resolve the authenticated Telegram user for private website APIs."""
     return await db.get_web_session_user(request.cookies.get("karva_session"))
 
+@app.get("/auth/session", response_class=JSONResponse)
+async def check_web_session(request: Request):
+    return {"authenticated": await get_web_user_id(request) is not None}
+
 @app.get("/auth/telegram")
 async def telegram_web_login(token: str):
     user_id = await db.consume_web_login_token(token)
