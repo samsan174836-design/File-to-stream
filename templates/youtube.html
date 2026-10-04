@@ -13,12 +13,18 @@
         .back-link, .external-link { color: #bce9ca; font-size: 13px; font-weight: 700; text-decoration: none; white-space: nowrap; }
         .player-title { flex: 1; min-width: 0; margin: 0; overflow: hidden; color: #f5f7f5; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
         .timer { margin: 4px 0 0; color: #b9c4bc; font-size: 12px; }
+        .pomodoro-controls { display: flex; width: min(100%, 1400px); align-items: center; justify-content: space-between; gap: 14px; margin: 0 auto 12px; padding: 11px 14px; border: 1px solid #29372e; border-radius: 11px; background: #111913; }
+        .pomodoro-copy { display: grid; gap: 4px; }
+        .pomodoro-copy strong { color: #e9f6ed; font-size: 13px; }
+        .pomodoro-copy span { color: #b9c4bc; font-size: 12px; }
+        .pomodoro-actions { display: flex; gap: 8px; }
+        .pomodoro-actions button { min-height: 35px; padding: 0 13px; border: 1px solid #43564a; border-radius: 8px; color: #d8f1df; background: #1a281e; font-size: 12px; font-weight: 700; cursor: pointer; }
         .player-frame { position: relative; width: min(100%, calc((100vh - 92px) * 16 / 9), 1400px); aspect-ratio: 16 / 9; align-self: center; overflow: hidden; background: #000; }
         #youtube-player, #youtube-player iframe { display: block; width: 100%; height: 100%; border: 0; }
         .break-overlay { position: absolute; inset: 0; display: grid; place-content: center; padding: 24px; color: #fff; background: rgba(5, 12, 8, .97); text-align: center; }
         .break-overlay[hidden] { display: none; }
         .break-overlay h2 { margin: 0 0 8px; font-size: clamp(26px, 6vw, 48px); }
-        .break-overlay p { margin: 0; color: #d5e2d9; font-size: 15px; }
+        .break-overlay p { margin: 7px 0 0; color: #d5e2d9; font-size: 15px; }
         .player-error { margin: 12px auto 0; color: #ffb7b7; font-size: 13px; text-align: center; }
         @media (max-width: 600px) {
             .player-page { padding: 14px; }
@@ -26,6 +32,9 @@
             .player-title-wrap { order: 2; width: 100%; flex: 1 0 100%; }
             .back-link { order: 1; }
             .external-link { order: 3; margin-left: auto; }
+            .pomodoro-controls { align-items: flex-start; flex-direction: column; }
+            .pomodoro-actions { width: 100%; }
+            .pomodoro-actions button { flex: 1; }
             .player-frame { width: 100%; }
         }
     </style>
@@ -36,14 +45,18 @@
             <a class="back-link" href="/">← Library</a>
             <div class="player-title-wrap">
                 <h1 class="player-title">{{ "YouTube playlist" if media_type == "playlist" else "YouTube video" }}</h1>
-                <p class="timer" id="play-timer" role="status" aria-live="polite">Play · 25:00 remaining</p>
+                <p class="timer" id="play-timer" role="status" aria-live="polite">Pomodoro ready · 4 focus cycles</p>
             </div>
             <a class="external-link" href="{{ ("https://www.yout-ube.com/playlist?list=" if media_type == "playlist" else "https://www.yout-ube.com/watch?v=") ~ media_id }}" target="_blank" rel="noopener noreferrer">Open via yout-ube ↗</a>
         </header>
+        <section class="pomodoro-controls" aria-label="Pomodoro timer">
+            <div class="pomodoro-copy"><strong>Pomodoro · 25 minutes focus / 5 minutes break</strong><span id="pomodoro-status" role="status" aria-live="polite">Ready · 4 focus cycles</span></div>
+            <div class="pomodoro-actions"><button id="pomodoro-toggle" type="button">Start</button><button id="pomodoro-reset" type="button">Reset</button></div>
+        </section>
         <div class="player-frame">
             <div id="youtube-player"></div>
             <div class="break-overlay" id="break-overlay" hidden>
-                <div><h2>Break time</h2><p id="break-countdown">Video will resume in 05:00</p></div>
+                <div><h2>Break time</h2><p>REST &amp; WALK &amp; HYDRIATE YOUR SELF... GET BACK IN 5 min.</p><p id="break-countdown">05:00</p></div>
             </div>
         </div>
         <p class="player-error" id="player-error" role="alert" hidden></p>
@@ -54,59 +67,107 @@
         const workDuration = 25 * 60 * 1000;
         const breakDuration = 5 * 60 * 1000;
         let player;
-        let elapsedWork = 0;
-        let playingSince = 0;
-        let breakUntil = 0;
-        let timerHandle = null;
+        let pomodoroPhase = "idle";
+        let pomodoroCycle = 0;
+        let pomodoroRunning = false;
+        let pomodoroDeadline = 0;
+        let pomodoroRemaining = workDuration;
+        let resumeAfterBreak = false;
+        let pomodoroInterval = null;
 
         function formatTime(ms) {
             const seconds = Math.max(0, Math.ceil(ms / 1000));
             return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
         }
-        function updateTimer() {
-            const now = Date.now();
-            if (breakUntil) {
-                const remaining = Math.max(0, breakUntil - now);
-                document.getElementById("play-timer").textContent = `Break · ${formatTime(remaining)} remaining`;
-                document.getElementById("break-countdown").textContent = `Video will resume in ${formatTime(remaining)}`;
-                if (!remaining) {
-                    breakUntil = 0;
-                    elapsedWork = 0;
-                    document.getElementById("break-overlay").hidden = true;
-                    player.playVideo();
-                }
-                return;
-            }
-            if (playingSince) {
-                elapsedWork += now - playingSince;
-                playingSince = now;
-                if (elapsedWork >= workDuration) {
-                    elapsedWork = 0;
-                    playingSince = 0;
-                    breakUntil = now + breakDuration;
-                    document.getElementById("play-timer").textContent = "Break · 05:00 remaining";
-                    document.getElementById("break-overlay").hidden = false;
-                    player.pauseVideo();
-                    return;
+        function renderPomodoro() {
+            let label;
+            if (pomodoroPhase === "idle") label = "Ready · 4 focus cycles";
+            else if (pomodoroPhase === "done") label = "Session complete · Great work!";
+            else {
+                const remaining = pomodoroRunning
+                    ? Math.max(0, pomodoroDeadline - Date.now())
+                    : pomodoroRemaining;
+                const cycle = pomodoroPhase === "break" ? pomodoroCycle : pomodoroCycle + 1;
+                label = `${pomodoroPhase === "break" ? "Break" : "Focus"} · ${formatTime(remaining)} remaining · Cycle ${cycle}/4`;
+                if (pomodoroPhase === "break") {
+                    document.getElementById("break-countdown").textContent = formatTime(remaining);
+                    document.getElementById("play-timer").textContent = `Break · ${formatTime(remaining)} remaining`;
+                } else {
+                    document.getElementById("play-timer").textContent = `Focus · ${formatTime(remaining)} remaining`;
                 }
             }
-            document.getElementById("play-timer").textContent = `Play · ${formatTime(workDuration - elapsedWork)} remaining`;
+            document.getElementById("pomodoro-status").textContent = label;
+            document.getElementById("pomodoro-toggle").textContent = pomodoroRunning ? "Pause" : "Start";
+            if (pomodoroPhase === "idle" || pomodoroPhase === "done") {
+                document.getElementById("play-timer").textContent = `Pomodoro ${label.toLowerCase()}`;
+            }
+        }
+        function updatePomodoro() {
+            if (!pomodoroRunning) return renderPomodoro();
+            const remaining = Math.max(0, pomodoroDeadline - Date.now());
+            pomodoroRemaining = remaining;
+            if (remaining > 0) return renderPomodoro();
+
+            if (pomodoroPhase === "work") {
+                pomodoroCycle += 1;
+                pomodoroPhase = "break";
+                pomodoroRemaining = breakDuration;
+                pomodoroDeadline = Date.now() + breakDuration;
+                resumeAfterBreak = Boolean(
+                    player && window.YT
+                    && player.getPlayerState() === window.YT.PlayerState.PLAYING
+                );
+                document.getElementById("break-overlay").hidden = false;
+                player?.pauseVideo();
+            } else if (pomodoroPhase === "break") {
+                document.getElementById("break-overlay").hidden = true;
+                if (pomodoroCycle >= 4) {
+                    pomodoroPhase = "done";
+                    pomodoroRunning = false;
+                    pomodoroDeadline = 0;
+                    clearInterval(pomodoroInterval);
+                    pomodoroInterval = null;
+                    return renderPomodoro();
+                }
+                pomodoroPhase = "work";
+                pomodoroRemaining = workDuration;
+                pomodoroDeadline = Date.now() + workDuration;
+                if (resumeAfterBreak) player?.playVideo();
+                resumeAfterBreak = false;
+            }
+            renderPomodoro();
+        }
+        function togglePomodoro() {
+            if (pomodoroPhase === "idle" || pomodoroPhase === "done") {
+                pomodoroCycle = 0;
+                pomodoroPhase = "work";
+                pomodoroRemaining = workDuration;
+            }
+            pomodoroRunning = !pomodoroRunning;
+            if (pomodoroRunning) {
+                pomodoroDeadline = Date.now() + pomodoroRemaining;
+                if (!pomodoroInterval) pomodoroInterval = setInterval(updatePomodoro, 250);
+            } else {
+                pomodoroRemaining = Math.max(0, pomodoroDeadline - Date.now());
+                pomodoroDeadline = 0;
+            }
+            renderPomodoro();
+        }
+        function resetPomodoro() {
+            if (pomodoroPhase === "break") document.getElementById("break-overlay").hidden = true;
+            pomodoroPhase = "idle";
+            pomodoroCycle = 0;
+            pomodoroRunning = false;
+            pomodoroDeadline = 0;
+            pomodoroRemaining = workDuration;
+            resumeAfterBreak = false;
+            clearInterval(pomodoroInterval);
+            pomodoroInterval = null;
+            renderPomodoro();
         }
         function onPlayerState(event) {
-            if (event.data === window.YT.PlayerState.PLAYING) {
-                if (breakUntil) {
-                    player.pauseVideo();
-                    return;
-                }
-                if (!playingSince) playingSince = Date.now();
-                if (!timerHandle) timerHandle = setInterval(updateTimer, 1000);
-            } else {
-                updateTimer();
-                playingSince = 0;
-                if (!breakUntil) {
-                    clearInterval(timerHandle);
-                    timerHandle = null;
-                }
+            if (event.data === window.YT.PlayerState.PLAYING && pomodoroPhase === "break") {
+                player.pauseVideo();
             }
         }
         function onYouTubeIframeAPIReady() {
@@ -135,8 +196,12 @@
                 }
             });
         }
+        document.getElementById("pomodoro-toggle").addEventListener("click", togglePomodoro);
+        document.getElementById("pomodoro-reset").addEventListener("click", resetPomodoro);
+        renderPomodoro();
         const apiScript = document.createElement("script");
         apiScript.src = "https://www.youtube.com/iframe_api";
+        apiScript.async = true;
         apiScript.onerror = () => {
             const error = document.getElementById("player-error");
             error.textContent = "The embedded player could not be loaded. Please try again.";

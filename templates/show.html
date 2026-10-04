@@ -2892,6 +2892,51 @@
             color: #f0b5c0;
             background: #35202a;
         }
+        .pomodoro-panel {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin: 16px 0 22px;
+            padding: 15px 17px;
+            border: 1px solid var(--line);
+            border-radius: 15px;
+            background: var(--panel);
+            box-shadow: var(--shadow);
+        }
+        .pomodoro-copy { display: grid; gap: 5px; }
+        .pomodoro-copy strong { color: var(--text); font-size: 14px; }
+        .pomodoro-copy span { color: var(--muted); font-size: 12px; }
+        .pomodoro-actions { display: flex; gap: 8px; }
+        .pomodoro-actions button {
+            min-height: 38px;
+            padding: 0 14px;
+            border: 1px solid var(--line);
+            border-radius: 9px;
+            color: var(--green-dark);
+            background: var(--green-soft);
+            font-size: 12px;
+            font-weight: 800;
+            cursor: pointer;
+        }
+        .pomodoro-break-overlay {
+            position: absolute;
+            inset: 0;
+            z-index: 6;
+            display: grid;
+            place-content: center;
+            padding: 22px;
+            color: #fff;
+            background: rgba(5, 12, 8, .96);
+            text-align: center;
+        }
+        .pomodoro-break-overlay[hidden] { display: none; }
+        .pomodoro-break-overlay h2 { margin: 0 0 9px; font-size: clamp(24px, 5vw, 42px); }
+        .pomodoro-break-overlay p { margin: 5px 0; color: #d5e2d9; font-size: 14px; }
+        @media (max-width: 520px) {
+            .pomodoro-panel { align-items: stretch; flex-direction: column; }
+            .pomodoro-actions button { flex: 1; }
+        }
         @media (prefers-reduced-motion: reduce) {
             *, *::before, *::after {
                 scroll-behavior: auto !important;
@@ -2943,7 +2988,7 @@
                 <button class="restart-playback" id="restart-playback" type="button">Restart</button>
             </div>
             <div class="player-loading" id="loader" role="status" aria-live="polite">Loading your file...</div>
-            <video id="video-player" playsinline webkit-playsinline preload="metadata" controlslist="nodownload noremoteplayback" disableremoteplayback disablepictureinpicture tabindex="0" hidden></video>
+            <video id="video-player" playsinline webkit-playsinline preload="auto" controlslist="nodownload noremoteplayback" disableremoteplayback disablepictureinpicture tabindex="0" hidden></video>
             <audio id="audio-player" preload="metadata" tabindex="0" hidden></audio>
             <div class="music-visualizer" id="music-visualizer" hidden aria-hidden="true">
                 <div class="music-disc">♫</div>
@@ -2975,9 +3020,23 @@
                     <button class="control-btn" id="fullscreen-toggle" aria-label="Fullscreen">⛶</button>
                 </div>
             </div>
+            <div class="pomodoro-break-overlay" id="pomodoro-break-overlay" hidden>
+                <div><h2>Break time</h2><p>REST &amp; WALK &amp; HYDRIATE YOUR SELF... GET BACK IN 5 min.</p><p id="pomodoro-break-countdown">05:00</p></div>
+            </div>
             <div class="player-placeholder" id="no-player" hidden>
                 <strong>Browser preview unavailable</strong>
                 This file cannot be previewed in the browser.
+            </div>
+        </section>
+
+        <section class="pomodoro-panel" id="pomodoro-panel" aria-label="Pomodoro timer" hidden>
+            <div class="pomodoro-copy">
+                <strong>Pomodoro · 25 minutes focus / 5 minutes break</strong>
+                <span id="pomodoro-status" role="status" aria-live="polite">Ready · 4 focus cycles</span>
+            </div>
+            <div class="pomodoro-actions">
+                <button id="pomodoro-toggle" type="button">Start</button>
+                <button id="pomodoro-reset" type="button">Reset</button>
             </div>
         </section>
 
@@ -3067,6 +3126,17 @@
          const musicFileLabel = document.getElementById("music-file-label");
         const completionState = document.getElementById("completion-state");
         const restartPlayback = document.getElementById("restart-playback");
+        const pomodoroPanel = document.getElementById("pomodoro-panel");
+        const pomodoroToggle = document.getElementById("pomodoro-toggle");
+        const pomodoroWorkDuration = 25 * 60 * 1000;
+        const pomodoroBreakDuration = 5 * 60 * 1000;
+        let pomodoroPhase = "idle";
+        let pomodoroCycle = 0;
+        let pomodoroRunning = false;
+        let pomodoroDeadline = 0;
+        let pomodoroRemaining = pomodoroWorkDuration;
+        let pomodoroResumePlayback = false;
+        let pomodoroInterval = null;
         let activeMedia = null;
         let playbackCompleted = false;
         let isProgressSeeking = false;
@@ -3238,8 +3308,8 @@
         }
 
         function enableAutoStart(media) {
-            const startupBufferSeconds = 8;
-            const maximumBufferWaitMs = 12000;
+            const startupBufferSeconds = 1;
+            const maximumBufferWaitMs = 2500;
             const startedAt = Date.now();
             const watchedEvents = [
                 "loadedmetadata", "loadeddata", "progress", "canplay",
@@ -3284,6 +3354,104 @@
             media.addEventListener("error", stopWatching, { once: true });
             bufferCheckTimer = window.setInterval(startWhenBuffered, 250);
             startWhenBuffered();
+        }
+
+        function formatPomodoroTime(milliseconds) {
+            const seconds = Math.max(0, Math.ceil(milliseconds / 1000));
+            return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+        }
+
+        function renderPomodoro() {
+            const status = document.getElementById("pomodoro-status");
+            if (pomodoroPhase === "idle") {
+                status.textContent = "Ready · 4 focus cycles";
+            } else if (pomodoroPhase === "done") {
+                status.textContent = "Session complete · Great work!";
+            } else {
+                const remaining = pomodoroRunning
+                    ? Math.max(0, pomodoroDeadline - Date.now())
+                    : pomodoroRemaining;
+                const isBreak = pomodoroPhase === "break";
+                const cycleNumber = isBreak ? pomodoroCycle : pomodoroCycle + 1;
+                status.textContent = `${isBreak ? "Break" : "Focus"} · ${formatPomodoroTime(remaining)} remaining · Cycle ${cycleNumber}/4`;
+                if (isBreak) {
+                    document.getElementById("pomodoro-break-countdown").textContent = formatPomodoroTime(remaining);
+                }
+            }
+            pomodoroToggle.textContent = pomodoroRunning ? "Pause" : "Start";
+        }
+
+        function updatePomodoro() {
+            if (!pomodoroRunning) {
+                renderPomodoro();
+                return;
+            }
+            pomodoroRemaining = Math.max(0, pomodoroDeadline - Date.now());
+            if (pomodoroRemaining > 0) {
+                renderPomodoro();
+                return;
+            }
+
+            if (pomodoroPhase === "work") {
+                pomodoroCycle += 1;
+                pomodoroPhase = "break";
+                pomodoroRemaining = pomodoroBreakDuration;
+                pomodoroDeadline = Date.now() + pomodoroBreakDuration;
+                pomodoroResumePlayback = Boolean(activeMedia && !activeMedia.paused);
+                activeMedia?.pause();
+                document.getElementById("pomodoro-break-overlay").hidden = false;
+            } else if (pomodoroPhase === "break") {
+                document.getElementById("pomodoro-break-overlay").hidden = true;
+                if (pomodoroCycle === 4) {
+                    pomodoroPhase = "done";
+                    pomodoroRunning = false;
+                    pomodoroDeadline = 0;
+                    clearInterval(pomodoroInterval);
+                    pomodoroInterval = null;
+                    renderPomodoro();
+                    return;
+                }
+                pomodoroPhase = "work";
+                pomodoroRemaining = pomodoroWorkDuration;
+                pomodoroDeadline = Date.now() + pomodoroWorkDuration;
+                if (pomodoroResumePlayback && activeMedia) {
+                    activeMedia.play().catch(() => {
+                        document.getElementById("pomodoro-status").textContent = "Focus started · press Play to resume video";
+                    });
+                }
+                pomodoroResumePlayback = false;
+            }
+            renderPomodoro();
+        }
+
+        function togglePomodoro() {
+            if (pomodoroPhase === "idle" || pomodoroPhase === "done") {
+                pomodoroPhase = "work";
+                pomodoroCycle = 0;
+                pomodoroRemaining = pomodoroWorkDuration;
+            }
+            pomodoroRunning = !pomodoroRunning;
+            if (pomodoroRunning) {
+                pomodoroDeadline = Date.now() + pomodoroRemaining;
+                if (!pomodoroInterval) pomodoroInterval = window.setInterval(updatePomodoro, 1000);
+            } else {
+                pomodoroRemaining = Math.max(0, pomodoroDeadline - Date.now());
+                pomodoroDeadline = 0;
+            }
+            renderPomodoro();
+        }
+
+        function resetPomodoro() {
+            document.getElementById("pomodoro-break-overlay").hidden = true;
+            pomodoroPhase = "idle";
+            pomodoroCycle = 0;
+            pomodoroRunning = false;
+            pomodoroDeadline = 0;
+            pomodoroRemaining = pomodoroWorkDuration;
+            pomodoroResumePlayback = false;
+            clearInterval(pomodoroInterval);
+            pomodoroInterval = null;
+            renderPomodoro();
         }
 
         async function copyText(value, button) {
@@ -3754,7 +3922,7 @@
         function setupPlayer(media) {
             activeMedia = media;
              media.autoplay = false;
-             media.preload = "metadata";
+             media.preload = "auto";
             media.volume = Number(volumeBar.value);
             customControls.hidden = false;
             bigPlay.hidden = false;
@@ -3763,7 +3931,12 @@
             media.addEventListener("loadedmetadata", restorePlaybackPosition);
             media.addEventListener("loadedmetadata", scheduleLiveFinish);
             media.addEventListener("playing", () => {
-                if (activeMedia === media) loader.hidden = true;
+                if (activeMedia !== media) return;
+                if (pomodoroPhase === "break") {
+                    media.pause();
+                    return;
+                }
+                loader.hidden = true;
             });
             ["waiting", "stalled"].forEach((eventName) => {
                 media.addEventListener(eventName, () => {
@@ -3790,6 +3963,9 @@
         }
 
         playToggle.onclick = startPlayback;
+        pomodoroToggle.onclick = togglePomodoro;
+        document.getElementById("pomodoro-reset").onclick = resetPomodoro;
+        renderPomodoro();
         skipBackToggle.onclick = () => seekBy(-10);
         skipForwardToggle.onclick = () => seekBy(10);
         bigPlay.onclick = startPlayback;
@@ -4010,6 +4186,7 @@
                  musicModeToggle.hidden = !isVideo;
 
                 if (isVideo) {
+                    pomodoroPanel.hidden = false;
                     setupPlayer(video);
                     video.src = streamUrl;
                     video.hidden = false;

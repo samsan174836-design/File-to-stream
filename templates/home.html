@@ -665,7 +665,7 @@
                         <input class="study-search-input" id="youtube-search-input" type="search" maxlength="100" placeholder="Search a subject, course, or topic" aria-label="Search YouTube study videos" required>
                         <button class="primary-btn" type="submit">Search videos</button>
                     </form>
-                    <p class="study-status" id="youtube-search-status" role="status" aria-live="polite">Embeddable videos longer than 3 minutes are shown. Shorts and live streams are excluded.</p>
+                    <p class="study-status" id="youtube-search-status" role="status" aria-live="polite">Videos and playlists are shown, including videos that do not allow embedding. Shorts and live streams are excluded.</p>
                     <section class="study-player" id="youtube-player-panel" aria-label="Study video player" hidden>
                         <div class="study-player-header">
                             <button class="study-player-close" id="youtube-player-close" type="button" aria-label="Close player">×</button>
@@ -678,7 +678,7 @@
                         <div class="study-player-frame">
                             <div id="youtube-player-frame"></div>
                             <div class="player-break-overlay" id="youtube-break-overlay" hidden>
-                                <div><h3>Break time</h3><p id="youtube-break-countdown">Resume in 05:00</p></div>
+                                <div><h3>Break time</h3><p>REST &amp; WALK &amp; HYDRIATE YOUR SELF... GET BACK IN 5 min.</p><p id="youtube-break-countdown">05:00</p></div>
                             </div>
                         </div>
                         <p class="study-player-error" id="youtube-player-error" role="alert" hidden></p>
@@ -700,6 +700,7 @@
 
     <script>
         const appStateKey = "karva-bhaiya:library-state";
+        const catalogCacheKey = "karva-bhaiya:catalog-cache";
         const startupState = "{{ 'ready' if bot_ready else 'starting' }}";
         let videos = [];
         let authRequired = false;
@@ -902,7 +903,7 @@
                     </a>
                     <button class="youtube-save-button ${saved ? "saved" : ""}" type="button" data-youtube-save="${escapeHtml(youtubeMediaKey(item))}" aria-label="${saved ? "Remove from saved videos" : "Save for later"}">${saved ? "Saved ✓" : "＋ Save"}</button>
                 </article>`;
-            }).join("") : emptyMarkup("No matching study videos", "Try another topic. Embeddable videos and playlists are included; Shorts and live streams are excluded.", "play");
+            }).join("") : emptyMarkup("No matching study videos", "Try another topic. Videos and playlists are included; Shorts and live streams are excluded.", "play");
         }
         function formatCountdown(milliseconds) {
             const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
@@ -1050,7 +1051,7 @@
                 const videos = Array.isArray(data.videos) ? data.videos : [];
                 youtubeSearchResults = videos;
                 renderYoutubeResults(videos);
-                status.textContent = `${videos.length} results found. Shorts (3 minutes or shorter), channels, and live streams are excluded. Videos and playlists are included.`;
+                status.textContent = `${videos.length} results found. Videos (including those that block embedding) and playlists are included. Shorts and live streams are excluded.`;
             } catch (error) {
                 if (requestId !== youtubeSearchRequest) return;
                 status.textContent = error.message || "YouTube search is temporarily unavailable.";
@@ -1126,10 +1127,26 @@
         }
         async function loadCatalog() {
             try {
+                const cached = JSON.parse(localStorage.getItem(catalogCacheKey) || "null");
+                if (cached && Number.isFinite(cached.savedAt)
+                    && Date.now() - cached.savedAt < 10 * 60 * 1000
+                    && Array.isArray(cached.videos)) {
+                    videos = cached.videos;
+                    renderAll();
+                }
+            } catch (error) {
+                console.warn("The saved catalog cache could not be read.", error);
+            }
+            try {
                 const response = await fetch("/api/catalog");
                 if (response.status === 401) {
                     authRequired = true;
                     videos = [];
+                    try {
+                        localStorage.removeItem(catalogCacheKey);
+                    } catch (error) {
+                        console.warn("The saved catalog cache could not be cleared.", error);
+                    }
                     document.getElementById("health-label").textContent = "Private login required";
                     renderAll();
                     return;
@@ -1137,10 +1154,23 @@
                 if (!response.ok) throw new Error("catalog unavailable");
                 const data = await response.json();
                 videos = Array.isArray(data.videos) ? data.videos : [];
+                if (data.status === "ok") {
+                    try {
+                        localStorage.setItem(catalogCacheKey, JSON.stringify({
+                            savedAt: Date.now(),
+                            videos
+                        }));
+                    } catch (error) {
+                        console.warn("The catalog could not be saved for fast reload.", error);
+                    }
+                }
                 const pill = document.getElementById("health-pill"); const label = document.getElementById("health-label");
                 if (data.status === "ok") { pill.classList.add("ready"); label.textContent = "Ready to stream"; }
                 else label.textContent = "Getting ready";
-            } catch { document.getElementById("health-label").textContent = "Catalog offline"; }
+            } catch (error) {
+                console.warn("The catalog could not be refreshed.", error);
+                document.getElementById("health-label").textContent = "Catalog offline";
+            }
             renderAll();
         }
         bindEvents(); setView(activeView, false); renderAll(); loadCatalog();

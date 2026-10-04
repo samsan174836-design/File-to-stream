@@ -836,7 +836,7 @@ def _youtube_is_short(duration: int, title: str, description: str) -> bool:
 
 @app.get("/api/youtube/search", response_class=JSONResponse)
 async def search_youtube_videos(request: Request, q: str):
-    """Search embeddable, non-live YouTube videos, excluding Shorts."""
+    """Search non-live YouTube videos and playlists, excluding Shorts."""
     if await get_web_user_id(request) is None:
         raise HTTPException(status_code=401, detail="Open the website from the Telegram bot to search videos.")
     query = q.strip()
@@ -856,7 +856,7 @@ async def search_youtube_videos(request: Request, q: str):
             asyncio.to_thread(
                 _youtube_api_get,
                 "search",
-                {**search_params, "type": "video", "videoEmbeddable": "true"},
+                {**search_params, "type": "video"},
             ),
             asyncio.to_thread(
                 _youtube_api_get,
