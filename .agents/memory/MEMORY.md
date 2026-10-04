@@ -1,0 +1,1 @@
+- [Heroku code-only scope](heroku-code-only-scope.md) — Keep changes to app code; leave Heroku and dependency setup untouched unless asked.

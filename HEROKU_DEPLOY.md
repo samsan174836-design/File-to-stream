@@ -37,11 +37,21 @@ Optional values:
 heroku config:set \
   FORCE_SUB_CHANNEL="your-force-sub-channel-id-or-username" \
   MULTI_TOKEN_1="another-bot-token" \
+  MULTI_TOKEN_2="another-bot-token" \
+  MULTI_TOKEN_3="another-bot-token" \
   REDIRECT_BLOGGER_URL="https://example.com/redirect" \
   BLOGGER_PAGE_URL="https://example.com/page" \
   YOUTUBE_API_KEY="your-youtube-data-api-v3-key" \
   --app your-app-name
 ```
+
+Set each token as a separate Heroku Config Var (`MULTI_TOKEN_1`, `MULTI_TOKEN_2`,
+`MULTI_TOKEN_3`, and so on). The app reads numbered `MULTI_TOKEN_N` variables at
+startup, skips blank or duplicate tokens, and starts each additional bot as a
+download client. Do not paste bot tokens into source code, commits, or chat.
+Each additional bot must be added to the storage channel with access to its
+messages. Setting or changing Heroku Config Vars restarts the dyno; wait until
+any active Telegram FloodWait period has ended before changing them.
 
 `BASE_URL` must be the public HTTPS app URL and must not end with `/`.
 `YOUTUBE_API_KEY` is optional; set it to enable Study & Knowledge YouTube search. Enable the YouTube Data API v3 in Google Cloud and restrict the key to that API.
