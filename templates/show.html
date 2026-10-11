@@ -2475,10 +2475,9 @@
             right: 16px;
             left: 16px;
             padding: 8px 9px;
-            border: 1px solid rgba(232, 219, 245, .13);
+            border: 0;
             border-radius: 13px;
-            background: rgba(25, 18, 34, .62);
-            backdrop-filter: blur(14px);
+            background: transparent;
         }
         .player-badge, .player-shortcut {
             border-color: rgba(230, 214, 245, .15);
@@ -2563,8 +2562,8 @@
             border: 0;
             border-radius: 0 0 22px 22px;
             color: #f5effb;
-            background: linear-gradient(transparent, rgba(17, 11, 25, .93));
-            backdrop-filter: blur(2px);
+            background: transparent;
+            backdrop-filter: none;
         }
         .progress-track { position: relative; line-height: 0; }
         .progress-bar { accent-color: #b599d8; }
@@ -2904,6 +2903,11 @@
             color: #f0b5c0;
             background: #35202a;
         }
+        .player-file-heading {
+            margin: 0 0 12px;
+            padding: 0;
+            border-bottom: 0;
+        }
         .pomodoro-panel {
             display: flex;
             align-items: center;
@@ -2985,6 +2989,21 @@
             </div>
         </section>
 
+        <div class="file-heading player-file-heading" id="player-file-heading" hidden>
+            <div class="file-icon" aria-hidden="true">▶</div>
+            <div class="file-heading-copy">
+                <h1 id="file-name"></h1>
+                <div class="file-subtitle">
+                    <span class="status-dot"></span>
+                    Ready for secure playback
+                </div>
+            </div>
+            <div class="pills">
+                <span class="pill" id="file-type">FILE</span>
+                <span class="pill size" id="file-size"></span>
+            </div>
+        </div>
+
         <section class="player-card" id="player-card">
             <div class="player-overlay-top">
                 <button class="player-badge stream-mode-toggle" id="stream-mode-toggle" type="button" aria-label="Switch to Live Streaming" aria-pressed="false">Fast Streaming</button>
@@ -3053,21 +3072,6 @@
         </section>
 
         <section id="content" hidden>
-            <div class="file-heading">
-                <div class="file-icon" aria-hidden="true">▶</div>
-                <div class="file-heading-copy">
-                    <h1 id="file-name"></h1>
-                    <div class="file-subtitle">
-                        <span class="status-dot"></span>
-                        Ready for secure playback
-                    </div>
-                </div>
-                <div class="pills">
-                    <span class="pill" id="file-type">FILE</span>
-                    <span class="pill size" id="file-size"></span>
-                </div>
-            </div>
-
             <div class="info-grid">
                 <div class="info-card">
                     <div class="info-label">Format</div>
@@ -3114,6 +3118,7 @@
         const fileId = decodeURIComponent(window.location.pathname.split("/").pop());
         const loader = document.getElementById("loader");
         const content = document.getElementById("content");
+        const playerFileHeading = document.getElementById("player-file-heading");
         const playerCard = document.getElementById("player-card");
         const video = document.getElementById("video-player");
         const audio = document.getElementById("audio-player");
@@ -4308,6 +4313,7 @@
                 }
 
                 document.getElementById("file-name").title = data.file_name || "";
+                playerFileHeading.hidden = false;
                 content.hidden = false;
             } catch (error) {
                 loader.className = "error";
