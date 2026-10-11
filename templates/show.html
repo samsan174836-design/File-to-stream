@@ -113,7 +113,14 @@
             background: #020307;
         }
 
-        .player-card video { object-fit: contain; }
+        .player-card video {
+            object-fit: contain;
+            outline: none;
+        }
+
+        .player-card #video-player {
+            filter: brightness(1.02) contrast(1.06) saturate(1.05);
+        }
 
         .player-card audio {
             position: absolute;
@@ -839,7 +846,6 @@
             border-radius: 999px;
             color: rgba(255,255,255,.82);
             background: rgba(255,255,255,.03);
-            backdrop-filter: blur(10px);
             font-size: 10px;
             font-weight: 700;
             letter-spacing: .08em;
@@ -3149,6 +3155,9 @@
          let audioOnlyMode = false;
          let autoplayMuted = false;
         let speedIndex = 1;
+        let spaceHoldTimer = null;
+        let spaceHoldPreviousRate = null;
+        let spaceHoldPreviousLabel = null;
         let controlsHideTimer = null;
         let lastSharedStateSave = 0;
         let lastPlaybackProgressSave = 0;
@@ -4022,6 +4031,21 @@
                 // Fullscreen can be denied by the browser or the embedding page.
             }
         }
+        function endSpaceHold() {
+            if (spaceHoldTimer !== null) {
+                clearTimeout(spaceHoldTimer);
+                spaceHoldTimer = null;
+            }
+            if (spaceHoldPreviousRate !== null) {
+                if (activeMedia) activeMedia.playbackRate = spaceHoldPreviousRate;
+                spaceHoldPreviousRate = null;
+            }
+            if (spaceHoldPreviousLabel !== null) {
+                speedToggle.textContent = spaceHoldPreviousLabel;
+                spaceHoldPreviousLabel = null;
+            }
+        }
+
         document.addEventListener("keydown", (event) => {
             revealPlayerControls();
             if (!activeMedia || ![" ", "Spacebar", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "f", "F"].includes(event.key)) return;
@@ -4034,12 +4058,22 @@
             if (isTextEntry) return;
 
             event.preventDefault();
-            if (event.key === "f" || event.key === "F") {
-                toggleFullscreen();
+            if (event.key === " " || event.key === "Spacebar") {
+                if (event.repeat || spaceHoldTimer !== null || spaceHoldPreviousRate !== null) return;
+                const media = activeMedia;
+                spaceHoldTimer = window.setTimeout(() => {
+                    spaceHoldTimer = null;
+                    if (activeMedia !== media || media.ended) return;
+                    spaceHoldPreviousRate = media.playbackRate;
+                    spaceHoldPreviousLabel = speedToggle.textContent;
+                    speedToggle.textContent = "2x";
+                    media.playbackRate = 2;
+                    if (media.paused) startPlayback();
+                }, 180);
                 return;
             }
-            if (event.key === " " || event.key === "Spacebar") {
-                startPlayback();
+            if (event.key === "f" || event.key === "F") {
+                toggleFullscreen();
                 return;
             }
             if (event.key === "ArrowRight") seekBy(10);
@@ -4047,6 +4081,13 @@
             if (event.key === "ArrowUp") changeVolume(.05);
             if (event.key === "ArrowDown") changeVolume(-.05);
         });
+        document.addEventListener("keyup", (event) => {
+            if (event.key !== " " && event.key !== "Spacebar") return;
+            const wasQuickPress = spaceHoldTimer !== null;
+            endSpaceHold();
+            if (wasQuickPress && activeMedia) startPlayback();
+        });
+        window.addEventListener("blur", endSpaceHold);
         ["mousemove", "mousedown", "touchstart"].forEach((eventName) => {
             playerCard.addEventListener(eventName, () => revealPlayerControls(), { passive: true });
         });

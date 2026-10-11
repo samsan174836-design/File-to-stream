@@ -40,7 +40,7 @@ from config import Config
 from database import db
 
 TELEGRAM_CHUNK_SIZE = 1024 * 1024
-STREAM_PREFETCH_CHUNKS = 8
+STREAM_PREFETCH_CHUNKS = 16
 PLAYBACK_CLIENT_COOKIE = "karva_playback_client"
 PLAYBACK_CLIENT_COOKIE_MAX_AGE = 180 * 24 * 60 * 60
 
