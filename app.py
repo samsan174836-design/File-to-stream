@@ -38,6 +38,9 @@ import math
 from config import Config
 from database import db
 
+TELEGRAM_CHUNK_SIZE = 1024 * 1024
+STREAM_PREFETCH_CHUNKS = 4
+
 # =====================================================================================
 # --- SETUP: BOT, WEB SERVER, AUR LOGGING ---
 # =====================================================================================
@@ -1177,30 +1180,91 @@ async def get_file_details_api(request: Request, unique_id: str):
     return response_data
 
 class ByteStreamer:
-    def __init__(self,c:Client):self.client=c
+    def __init__(self, c: Client):
+        self.client = c
+
     @staticmethod
-    async def get_location(f:FileId): return raw.types.InputDocumentFileLocation(id=f.media_id,access_hash=f.access_hash,file_reference=f.file_reference,thumb_size=f.thumbnail_size)
-    async def yield_file(self,f:FileId,i:int,o:int,fc:int,lc:int,pc:int,cs:int):
-        c=self.client;work_loads[i]+=1;ms=c.media_sessions.get(f.dc_id)
-        if ms is None:
-            if f.dc_id!=await c.storage.dc_id():
-                ak=await Auth(c,f.dc_id,await c.storage.test_mode()).create();ms=Session(c,f.dc_id,ak,await c.storage.test_mode(),is_media=True);await ms.start();ea=await c.invoke(raw.functions.auth.ExportAuthorization(dc_id=f.dc_id));await ms.invoke(raw.functions.auth.ImportAuthorization(id=ea.id,bytes=ea.bytes))
-            else:ms=c.session
-            c.media_sessions[f.dc_id]=ms
-        loc=await self.get_location(f);cp=1
+    async def get_location(f: FileId):
+        return raw.types.InputDocumentFileLocation(
+            id=f.media_id,
+            access_hash=f.access_hash,
+            file_reference=f.file_reference,
+            thumb_size=f.thumbnail_size,
+        )
+
+    async def yield_file(
+        self,
+        file_id: FileId,
+        client_id: int,
+        offset: int,
+        first_part_cut: int,
+        last_part_cut: int,
+        part_count: int,
+        chunk_size: int,
+    ):
+        work_loads[client_id] += 1
+        pending = {}
         try:
-            while cp<=pc:
-                r=await ms.invoke(raw.functions.upload.GetFile(location=loc,offset=o,limit=cs),retries=0)
-                if isinstance(r,raw.types.upload.File):
-                    chk=r.bytes
-                    if not chk:break
-                    if pc==1:yield chk[fc:lc]
-                    elif cp==1:yield chk[fc:]
-                    elif cp==pc:yield chk[:lc]
-                    else:yield chk
-                    cp+=1;o+=cs
-                else:break
-        finally:work_loads[i]-=1
+            client = self.client
+            media_session = client.media_sessions.get(file_id.dc_id)
+            if media_session is None:
+                test_mode = await client.storage.test_mode()
+                if file_id.dc_id != await client.storage.dc_id():
+                    auth_key = await Auth(client, file_id.dc_id, test_mode).create()
+                    media_session = Session(
+                        client, file_id.dc_id, auth_key, test_mode, is_media=True
+                    )
+                    await media_session.start()
+                    exported_auth = await client.invoke(
+                        raw.functions.auth.ExportAuthorization(dc_id=file_id.dc_id)
+                    )
+                    await media_session.invoke(
+                        raw.functions.auth.ImportAuthorization(
+                            id=exported_auth.id, bytes=exported_auth.bytes
+                        )
+                    )
+                else:
+                    media_session = client.session
+                client.media_sessions[file_id.dc_id] = media_session
+
+            location = await self.get_location(file_id)
+
+            async def fetch_part(part_index: int) -> bytes:
+                response = await media_session.invoke(
+                    raw.functions.upload.GetFile(
+                        location=location,
+                        offset=offset + part_index * chunk_size,
+                        limit=chunk_size,
+                    ),
+                    retries=0,
+                )
+                if not isinstance(response, raw.types.upload.File):
+                    raise RuntimeError("Telegram did not return a file chunk.")
+                return response.bytes
+
+            next_part = 0
+            while next_part < min(part_count, STREAM_PREFETCH_CHUNKS):
+                pending[next_part] = asyncio.create_task(fetch_part(next_part))
+                next_part += 1
+
+            for part_index in range(part_count):
+                chunk = await pending.pop(part_index)
+                if not chunk:
+                    raise RuntimeError("Telegram returned an empty file chunk.")
+
+                if next_part < part_count:
+                    pending[next_part] = asyncio.create_task(fetch_part(next_part))
+                    next_part += 1
+
+                start = first_part_cut if part_index == 0 else 0
+                end = last_part_cut if part_index == part_count - 1 else len(chunk)
+                yield chunk[start:end]
+        finally:
+            for task in pending.values():
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending.values(), return_exceptions=True)
+            work_loads[client_id] -= 1
 
 @app.get("/dl/{mid}/{fname}")
 async def stream_media(r:Request,mid:int,fname:str):
@@ -1215,10 +1279,37 @@ async def stream_media(r:Request,mid:int,fname:str):
         if not m or msg.empty:raise FileNotFoundError
         fid=FileId.decode(m.file_id);fsize=m.file_size;rh=r.headers.get("Range","");fb,ub=0,fsize-1
         if rh:
-            rps=rh.replace("bytes=","").split("-");fb=int(rps[0])
-            if len(rps)>1 and rps[1]:ub=int(rps[1])
-        if(ub>=fsize)or(fb<0):raise HTTPException(416)
-        rl=ub-fb+1;cs=1024*1024;off=(fb//cs)*cs;fc=fb-off;lc=(ub%cs)+1
+            match = re.fullmatch(r"bytes=(\d*)-(\d*)", rh.strip())
+            if not match:
+                raise HTTPException(
+                    status_code=416,
+                    headers={"Content-Range": f"bytes */{fsize}"},
+                )
+            range_start, range_end = match.groups()
+            if range_start:
+                fb = int(range_start)
+                if range_end:
+                    ub = int(range_end)
+                if fb >= fsize or fb > ub:
+                    raise HTTPException(
+                        status_code=416,
+                        headers={"Content-Range": f"bytes */{fsize}"},
+                    )
+                ub = min(ub, fsize - 1)
+            elif range_end:
+                suffix_length = int(range_end)
+                if suffix_length <= 0 or fsize == 0:
+                    raise HTTPException(
+                        status_code=416,
+                        headers={"Content-Range": f"bytes */{fsize}"},
+                    )
+                fb = max(0, fsize - suffix_length)
+            else:
+                raise HTTPException(
+                    status_code=416,
+                    headers={"Content-Range": f"bytes */{fsize}"},
+                )
+        rl=ub-fb+1;cs=TELEGRAM_CHUNK_SIZE;off=(fb//cs)*cs;fc=fb-off;lc=(ub%cs)+1
         # The first Telegram chunk starts at the aligned offset, so include
         # every source chunk touched by the requested byte range.
         pc=math.ceil((ub-off+1)/cs)
@@ -1226,6 +1317,8 @@ async def stream_media(r:Request,mid:int,fname:str):
         hdrs={"Content-Type":m.mime_type or "application/octet-stream","Accept-Ranges":"bytes","Cache-Control":"private, no-store, max-age=0","Pragma":"no-cache","Content-Disposition":f'inline; filename="{m.file_name}"',"Content-Length":str(rl),"X-Content-Type-Options":"nosniff"}
         if rh:hdrs["Content-Range"]=f"bytes {fb}-{ub}/{fsize}"
         return StreamingResponse(body,status_code=sc,headers=hdrs)
+    except HTTPException:
+        raise
     except FileNotFoundError:raise HTTPException(404)
     except Exception:print(traceback.format_exc());raise HTTPException(500)
 
