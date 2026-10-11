@@ -2573,16 +2573,16 @@
         .progress-bar::-webkit-slider-runnable-track { background: rgba(236, 227, 245, .28); }
         .progress-bar::-moz-range-track { background: rgba(236, 227, 245, .28); }
         .progress-bar::-webkit-slider-thumb {
-            opacity: 1;
-            border-color: #fff;
-            background: #c0a6e1;
-            box-shadow: 0 0 0 2px rgba(192, 166, 225, .18);
+            opacity: 0;
+            border-color: transparent;
+            background: transparent;
+            box-shadow: none;
         }
         .progress-bar::-moz-range-thumb {
-            opacity: 1;
-            border-color: #fff;
-            background: #c0a6e1;
-            box-shadow: 0 0 0 2px rgba(192, 166, 225, .18);
+            opacity: 0;
+            border-color: transparent;
+            background: transparent;
+            box-shadow: none;
         }
         .control-btn {
             border: 1px solid rgba(233, 220, 246, .08);
@@ -3151,6 +3151,8 @@
         let speedIndex = 1;
         let controlsHideTimer = null;
         let lastSharedStateSave = 0;
+        let lastPlaybackProgressSave = 0;
+        let serverPlaybackPosition = 0;
         let lastTouchTapAt = 0;
         let lastTouchTapX = 0;
         let suppressTouchClickUntil = 0;
@@ -3314,7 +3316,7 @@
         }
 
         function enableAutoStart(media) {
-            const startupBufferSeconds = 1;
+            const startupBufferSeconds = 2;
             const maximumBufferWaitMs = 2500;
             const startedAt = Date.now();
             const watchedEvents = [
@@ -3642,16 +3644,35 @@
 
         function savePlaybackPosition() {
             if (!activeMedia || !Number.isFinite(activeMedia.duration) || activeMedia.duration <= 0) return;
-            try {
-                if (activeMedia.ended || activeMedia.currentTime >= activeMedia.duration - 1) {
-                    localStorage.removeItem(playbackStorageKey);
-                } else {
-                    localStorage.setItem(playbackStorageKey, String(activeMedia.currentTime));
-                }
-            } catch {
-                // Playback should continue even if browser storage is unavailable.
+            const now = Date.now();
+            if (now - lastPlaybackProgressSave >= 10000) {
+                lastPlaybackProgressSave = now;
+                void sendPlaybackProgress(false);
             }
             syncSharedLibraryState();
+        }
+
+        async function sendPlaybackProgress(keepalive) {
+            if (!activeMedia || !Number.isFinite(activeMedia.duration) || activeMedia.duration <= 0) return;
+            try {
+                const response = await fetch(
+                    `/api/file/${encodeURIComponent(fileId)}/progress`,
+                    {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            position: Math.max(0, Math.min(activeMedia.currentTime, activeMedia.duration)),
+                            duration: activeMedia.duration
+                        }),
+                        keepalive
+                    }
+                );
+                if (!response.ok) {
+                    throw new Error(`Playback progress save failed (${response.status}).`);
+                }
+            } catch (error) {
+                console.warn("Playback progress could not be saved.", error);
+            }
         }
 
         function restorePlaybackPosition() {
@@ -3664,17 +3685,24 @@
                 showCompletionState();
                 return;
             }
-            try {
-                const savedPosition = Number(localStorage.getItem(playbackStorageKey));
-                if (Number.isFinite(savedPosition) && savedPosition > 0
-                    && savedPosition < activeMedia.duration - 1) {
-                    activeMedia.currentTime = Math.min(savedPosition, activeMedia.duration);
-                }
-            } catch {
-                // Ignore storage errors and start from the beginning.
+            if (Number.isFinite(serverPlaybackPosition) && serverPlaybackPosition > 0
+                && serverPlaybackPosition < activeMedia.duration - 1) {
+                activeMedia.currentTime = Math.min(serverPlaybackPosition, activeMedia.duration);
             }
             // Start aggressive buffering only after the saved position is restored.
             activeMedia.preload = "auto";
+        }
+
+        function applyServerPlaybackPosition(position) {
+            serverPlaybackPosition = Number.isFinite(position) ? position : 0;
+            if (!activeMedia || !Number.isFinite(activeMedia.duration)
+                || serverPlaybackPosition <= 0
+                || serverPlaybackPosition >= activeMedia.duration - 1) {
+                return;
+            }
+            if (activeMedia.paused || activeMedia.currentTime < 2) {
+                activeMedia.currentTime = serverPlaybackPosition;
+            }
         }
 
         function seekBy(seconds) {
@@ -3957,6 +3985,12 @@
             media.addEventListener("timeupdate", savePlaybackPosition);
             media.addEventListener("pause", savePlaybackPosition);
             media.addEventListener("ended", savePlaybackPosition);
+            media.addEventListener("pause", () => {
+                void sendPlaybackProgress(true);
+            });
+            media.addEventListener("ended", () => {
+                void sendPlaybackProgress(true);
+            });
             media.addEventListener("ended", markPlaybackComplete);
             ["loadedmetadata", "durationchange", "progress", "canplay", "loadeddata", "timeupdate", "play", "pause", "ended", "volumechange"]
                 .forEach((eventName) => media.addEventListener(eventName, updatePlayerUi));
@@ -4133,10 +4167,15 @@
             setStreamingMode("fast");
             completionState.hidden = true;
             activeMedia.currentTime = 0;
+            lastPlaybackProgressSave = Date.now();
+            void sendPlaybackProgress(true);
             updatePlayerUi();
             activeMedia.play().catch(() => {});
         };
-        window.addEventListener("pagehide", savePlaybackPosition);
+        window.addEventListener("pagehide", () => {
+            savePlaybackPosition();
+            void sendPlaybackProgress(true);
+        });
          window.addEventListener("pageshow", keepBackgroundPlayback);
          document.addEventListener("visibilitychange", () => {
              if (document.hidden) {
@@ -4162,6 +4201,17 @@
 
         async function loadFile() {
             try {
+                void fetch(
+                    `/api/file/${encodeURIComponent(fileId)}/progress`
+                ).then((response) => {
+                    if (!response.ok) throw new Error(`Playback progress unavailable (${response.status}).`);
+                    return response.json();
+                }).then((data) => {
+                    const position = Number(data.position);
+                    applyServerPlaybackPosition(Number.isFinite(position) ? position : 0);
+                }).catch((error) => {
+                    console.warn("Playback resume position could not be loaded.", error);
+                });
                 const response = await fetch(`/api/file/${encodeURIComponent(fileId)}`);
                 if (!response.ok) throw new Error("File details unavailable");
                 const data = await response.json();

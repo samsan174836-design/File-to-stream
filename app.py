@@ -24,6 +24,7 @@ from pyrogram.handlers import MessageHandler
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, ChatMemberUpdated
 from pyrogram.errors import FloodWait, UserNotParticipant
 from fastapi import FastAPI, Request, HTTPException
+from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse, RedirectResponse
 from pyrogram.file_id import FileId
@@ -39,7 +40,14 @@ from config import Config
 from database import db
 
 TELEGRAM_CHUNK_SIZE = 1024 * 1024
-STREAM_PREFETCH_CHUNKS = 4
+STREAM_PREFETCH_CHUNKS = 8
+PLAYBACK_CLIENT_COOKIE = "karva_playback_client"
+PLAYBACK_CLIENT_COOKIE_MAX_AGE = 180 * 24 * 60 * 60
+
+
+class PlaybackProgressUpdate(BaseModel):
+    position: float = Field(ge=0)
+    duration: float = Field(gt=0)
 
 # =====================================================================================
 # --- SETUP: BOT, WEB SERVER, AUR LOGGING ---
@@ -1143,11 +1151,27 @@ async def show_page(request: Request, unique_id: str):
             status_code=503,
             detail=startup_error or "Bot is not ready yet. Please try again shortly.",
         )
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request=request,
         name="show.html",
         context={"request": request}
     )
+    if not get_playback_client_id(request):
+        response.set_cookie(
+            PLAYBACK_CLIENT_COOKIE,
+            secrets.token_urlsafe(32),
+            max_age=PLAYBACK_CLIENT_COOKIE_MAX_AGE,
+            httponly=True,
+            secure=request.url.scheme == "https",
+            samesite="lax",
+            path="/",
+        )
+    return response
+
+
+def get_playback_client_id(request: Request):
+    client_id = request.cookies.get(PLAYBACK_CLIENT_COOKIE)
+    return client_id if client_id and len(client_id) <= 128 else None
 
 @app.get("/api/file/{unique_id}", response_class=JSONResponse)
 async def get_file_details_api(request: Request, unique_id: str):
@@ -1178,6 +1202,37 @@ async def get_file_details_api(request: Request, unique_id: str):
         "vlc_player_link": f"intent:{stream_link}#Intent;action=android.intent.action.VIEW;type={mime_type};package=org.videolan.vlc;end"
     }
     return response_data
+
+
+@app.get("/api/file/{unique_id}/progress", response_class=JSONResponse)
+async def get_file_playback_progress(request: Request, unique_id: str):
+    client_id = get_playback_client_id(request)
+    if not client_id:
+        raise HTTPException(status_code=401, detail="Playback session is unavailable.")
+    position = await db.get_playback_progress(unique_id, client_id)
+    return {"position": position}
+
+
+@app.put("/api/file/{unique_id}/progress", response_class=JSONResponse)
+async def save_file_playback_progress(
+    request: Request,
+    unique_id: str,
+    progress: PlaybackProgressUpdate,
+):
+    client_id = get_playback_client_id(request)
+    if not client_id:
+        raise HTTPException(status_code=401, detail="Playback session is unavailable.")
+    if progress.position > progress.duration:
+        raise HTTPException(status_code=422, detail="Playback position exceeds media duration.")
+    saved = await db.save_playback_progress(
+        unique_id,
+        client_id,
+        progress.position,
+        progress.duration,
+    )
+    if not saved:
+        raise HTTPException(status_code=503, detail="Playback progress storage is unavailable.")
+    return {"status": "ok"}
 
 class ByteStreamer:
     def __init__(self, c: Client):

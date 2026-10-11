@@ -17,6 +17,7 @@ class Database:
         self.users = None
         self.web_login_tokens = None
         self.web_sessions = None
+        self.playback_progress = None
         if not Config.DATABASE_URL:
             print("WARNING: DATABASE_URL not set. Links will not be permanent.")
 
@@ -35,6 +36,7 @@ class Database:
             self.users = self.db["users"]
             self.web_login_tokens = self.db["web_login_tokens"]
             self.web_sessions = self.db["web_sessions"]
+            self.playback_progress = self.db["playback_progress"]
             await self.collection.create_index(
                 [("source_chat_id", 1), ("source_message_id", 1)],
                 unique=True,
@@ -53,6 +55,14 @@ class Database:
             await self.web_sessions.create_index(
                 "session_id", unique=True, sparse=True, name="web_session_id"
             )
+            await self.playback_progress.create_index(
+                [("client_id", 1), ("unique_id", 1)],
+                unique=True,
+                name="playback_progress_client_link",
+            )
+            await self.playback_progress.create_index(
+                "updated_at", expireAfterSeconds=15552000, name="playback_progress_expiry"
+            )
             print("✅ Database connection established.")
         else:
             self.db = None
@@ -60,6 +70,7 @@ class Database:
             self.users = None
             self.web_login_tokens = None
             self.web_sessions = None
+            self.playback_progress = None
 
     async def disconnect(self):
         """Database connection ko band karta hai."""
@@ -238,6 +249,31 @@ class Database:
             doc = await self.collection.find_one({'_id': unique_id})
             return doc.get('message_id') if doc else None
         return None
+
+    async def get_playback_progress(self, unique_id, client_id):
+        if self.playback_progress is None or not client_id:
+            return None
+        progress = await self.playback_progress.find_one(
+            {"unique_id": unique_id, "client_id": client_id},
+            {"_id": 0, "position": 1},
+        )
+        return progress.get("position") if progress else None
+
+    async def save_playback_progress(self, unique_id, client_id, position, duration):
+        if self.playback_progress is None:
+            return False
+        await self.playback_progress.update_one(
+            {"unique_id": unique_id, "client_id": client_id},
+            {
+                "$set": {
+                    "position": position,
+                    "duration": duration,
+                    "updated_at": datetime.now(timezone.utc),
+                }
+            },
+            upsert=True,
+        )
+        return True
 
     async def list_ready_links(self, limit=None, user_id=None):
         """Return link records that can be shown in the browser catalog."""
