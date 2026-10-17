@@ -202,6 +202,7 @@
             .hero-copy { min-height: 0; padding: 5px 0; }
             h1 { font-size: clamp(39px, 12vw, 58px); }
             .hero-copy > p { font-size: 14px; }
+            .content { padding-bottom: 132px; }
             .hero-visual { min-height: 290px; padding: 20px; }
             .visual-screen { height: 172px; }
             .link-form { align-items: stretch; flex-direction: column; }
@@ -211,8 +212,8 @@
             .video-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; }
             .card-body { padding: 10px; }
             .card-title { font-size: 12px; }
-            .mobile-nav { position: fixed; right: 9px; bottom: 9px; left: 9px; z-index: 10; display: grid; grid-template-columns: repeat(6, 1fr); padding: 7px; border: 1px solid var(--line); border-radius: 17px; background: rgba(255,255,255,.94); box-shadow: 0 13px 35px rgba(26,73,47,.16); backdrop-filter: blur(16px); }
-            .mobile-nav .nav-item { display: grid; justify-items: center; gap: 3px; padding: 7px 2px; font-size: 9px; }
+            .mobile-nav { position: fixed; right: 9px; bottom: 9px; left: 9px; z-index: 10; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 7px; border: 1px solid var(--line); border-radius: 17px; background: rgba(255,255,255,.94); box-shadow: 0 13px 35px rgba(26,73,47,.16); backdrop-filter: blur(16px); }
+            .mobile-nav .nav-item { display: grid; justify-items: center; gap: 3px; padding: 6px 2px; font-size: 9px; }
             .mobile-nav .nav-icon { width: 18px; height: 18px; }
             .page-title { align-items: start; flex-direction: column; }
             .remove-video { opacity: 1; }
@@ -667,13 +668,13 @@
             <p class="nav-label">Browse</p>
             <nav class="nav-list" aria-label="Main navigation">
                 <button class="nav-item active" data-view="home"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m4 10 8-6 8 6v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-9Z"/><path d="M9 20v-6h6v6"/></svg></span>Home</button>
-                <button class="nav-item" data-view="continue"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg></span>Continue</button>
-                <button class="nav-item" data-view="completed"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m5 12 4 4L19 6"/></svg></span>Completed</button>
-                <button class="nav-item" data-view="later"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M6 4h12v16l-6-3.5L6 20V4Z"/></svg></span>Later Lecture</button>
+                <button class="nav-item" data-view="all-lecture"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span>All Lectures</button>
                 <button class="nav-item" data-view="today"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 10h16"/></svg></span>Today Lecture</button>
-                <button class="nav-item" data-view="all-lecture"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span>All Lecture</button>
-                <button class="nav-item" data-view="search"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="10.8" cy="10.8" r="5.8"/><path d="m16 16 4 4"/></svg></span>Search</button>
+                <button class="nav-item" data-view="continue"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg></span>Continue</button>
+                <button class="nav-item" data-view="later"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M6 4h12v16l-6-3.5L6 20V4Z"/></svg></span>Later Lecture</button>
                 <button class="nav-item" data-view="study"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21V5.5Z"/><path d="M4 17a2.5 2.5 0 0 1 2.5-2.5H20M9 7h7"/></svg></span>YouTube</button>
+                <button class="nav-item" data-view="completed"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m5 12 4 4L19 6"/></svg></span>Completed</button>
+                <button class="nav-item" data-view="search"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="10.8" cy="10.8" r="5.8"/><path d="m16 16 4 4"/></svg></span>Search</button>
             </nav>
             <div class="sidebar-footer"><strong>Your Karva Bhaiya</strong>Clean playback for lectures, movies, and everything worth watching.<br><br><strong>Private on this browser</strong>Your watch history and progress stay on this device.</div>
         </aside>
@@ -747,11 +748,13 @@
     </div>
     <nav class="mobile-nav" aria-label="Mobile navigation">
         <button class="nav-item active" data-view="home"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m4 10 8-6 8 6v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-9Z"/><path d="M9 20v-6h6v6"/></svg></span>Home</button>
+        <button class="nav-item" data-view="all-lecture"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span>All Lectures</button>
+        <button class="nav-item" data-view="today"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 10h16"/></svg></span>Today Lecture</button>
         <button class="nav-item" data-view="continue"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg></span>Continue</button>
-        <button class="nav-item" data-view="completed"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m5 12 4 4L19 6"/></svg></span>Done</button>
-        <button class="nav-item" data-view="later"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M6 4h12v16l-6-3.5L6 20V4Z"/></svg></span>Later</button>
-        <button class="nav-item" data-view="search"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="10.8" cy="10.8" r="5.8"/><path d="m16 16 4 4"/></svg></span>Search</button>
+        <button class="nav-item" data-view="later"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M6 4h12v16l-6-3.5L6 20V4Z"/></svg></span>Later Lecture</button>
         <button class="nav-item" data-view="study"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21V5.5Z"/><path d="M4 17a2.5 2.5 0 0 1 2.5-2.5H20M9 7h7"/></svg></span>YouTube</button>
+        <button class="nav-item" data-view="completed"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m5 12 4 4L19 6"/></svg></span>Completed</button>
+        <button class="nav-item" data-view="search"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="10.8" cy="10.8" r="5.8"/><path d="m16 16 4 4"/></svg></span>Search</button>
     </nav>
     <dialog class="login-dialog" id="login-dialog" aria-labelledby="login-dialog-title">
         <form id="login-form" novalidate>
@@ -919,23 +922,21 @@
         }
         document.addEventListener("load", (event) => {
             const image = event.target;
-            if (image instanceof HTMLImageElement && image.matches(".thumb img, .hero-thumbnail")) {
+            if (image instanceof HTMLImageElement && image.matches(".thumb img, .visual-thumbnail")) {
+                image.closest(".visual-screen")?.classList.add("has-thumbnail");
                 void persistLoadedThumbnail(image);
             }
         }, true);
-        function generateVideoThumbnail(previewUrl) {
-            if (generatedThumbnailCache.has(previewUrl)) {
-                return Promise.resolve(generatedThumbnailCache.get(previewUrl));
-            }
-            if (pendingThumbnailGenerations.has(previewUrl)) {
-                return pendingThumbnailGenerations.get(previewUrl);
-            }
-            const generation = new Promise((resolve) => {
+        function generateVideoThumbnailAttempt(previewUrl) {
+            return new Promise((resolve) => {
                 const video = document.createElement("video");
                 video.muted = true;
                 video.preload = "metadata";
                 let timeout;
+                let finished = false;
                 const finish = (thumbnail = null) => {
+                    if (finished) return;
+                    finished = true;
                     window.clearTimeout(timeout);
                     video.pause();
                     video.removeAttribute("src");
@@ -965,7 +966,6 @@
                     }
                 };
                 video.addEventListener("error", () => {
-                    console.warn("A video preview could not be loaded to generate its thumbnail.");
                     finish();
                 }, { once: true });
                 video.addEventListener("loadedmetadata", () => {
@@ -979,11 +979,32 @@
                         video.addEventListener("loadeddata", capture, { once: true });
                     }
                 }, { once: true });
-                timeout = window.setTimeout(() => {
-                    console.warn("Timed out while generating a video thumbnail.");
-                    finish();
-                }, 12000);
+                timeout = window.setTimeout(() => finish(), 8000);
                 video.src = previewUrl;
+            });
+        }
+        function generateVideoThumbnail(previewUrl) {
+            if (generatedThumbnailCache.has(previewUrl)) {
+                return Promise.resolve(generatedThumbnailCache.get(previewUrl));
+            }
+            if (pendingThumbnailGenerations.has(previewUrl)) {
+                return pendingThumbnailGenerations.get(previewUrl);
+            }
+            const generation = (async () => {
+                for (let attempt = 0; attempt < 3; attempt += 1) {
+                    const url = new URL(previewUrl, window.location.href);
+                    if (attempt) url.searchParams.set("thumbnail_retry", String(attempt));
+                    const thumbnail = await generateVideoThumbnailAttempt(url.href);
+                    if (thumbnail) return thumbnail;
+                    if (attempt < 2) {
+                        await new Promise((resolve) => window.setTimeout(resolve, 350 * (attempt + 1)));
+                    }
+                }
+                console.warn("A video thumbnail could not be generated after three attempts.");
+                return null;
+            })().catch((error) => {
+                console.warn("Video thumbnail generation failed.", error);
+                return null;
             });
             pendingThumbnailGenerations.set(previewUrl, generation);
             generation.then((thumbnail) => {
@@ -992,42 +1013,75 @@
             });
             return generation;
         }
-        async function restoreCardThumbnail(image, videoId, previewUrl) {
-            if (!videoId || !image.isConnected || image.dataset.thumbnailFallbackAttempted === "true") return;
-            image.dataset.thumbnailFallbackAttempted = "true";
-            image.removeAttribute("data-preview-url");
+        async function saveThumbnailToServer(videoId, dataUrl) {
+            const image = await fetch(dataUrl);
+            const response = await fetch(`/thumbnail/${encodeURIComponent(videoId)}`, {
+                method: "PUT",
+                headers: { "Content-Type": "image/jpeg" },
+                body: await image.blob()
+            });
+            if (!response.ok) {
+                throw new Error(`Thumbnail storage unavailable (${response.status}).`);
+            }
+        }
+        async function restoreCardThumbnail(image, videoId, previewUrl, thumbnailUrl) {
+            if (!videoId || !image.isConnected || image.dataset.thumbnailRestoring === videoId) return;
+            image.dataset.thumbnailRestoring = videoId;
             try {
-                const savedThumbnail = await getSavedThumbnail(videoId);
+                let savedThumbnail = null;
+                try {
+                    savedThumbnail = await getSavedThumbnail(videoId);
+                } catch (error) {
+                    console.warn(`The saved thumbnail for video ${videoId} could not be restored.`, error);
+                }
                 if (savedThumbnail && image.isConnected && image.dataset.videoId === videoId) {
                     image.src = savedThumbnail;
+                    image.closest(".visual-screen")?.classList.add("has-thumbnail");
                     return;
                 }
-            } catch (error) {
-                console.warn(`The saved thumbnail for video ${videoId} could not be restored.`, error);
-            }
-            if (!previewUrl) {
-                image.remove();
-                return;
-            }
-            const thumbnail = await generateVideoThumbnail(previewUrl);
-            if (!thumbnail) {
-                image.remove();
-                return;
-            }
-            if (!image.isConnected || image.dataset.videoId !== videoId) return;
-            image.src = thumbnail;
-            try {
-                await saveThumbnail(videoId, thumbnail);
-            } catch (error) {
-                console.warn(`The generated thumbnail for video ${videoId} could not be saved for later.`, error);
+                if (!image.isConnected || image.dataset.videoId !== videoId) return;
+                if (thumbnailUrl && image.dataset.thumbnailRequestFailed !== "true") {
+                    image.src = thumbnailUrl;
+                    return;
+                }
+                if (!previewUrl) {
+                    image.remove();
+                    image.closest(".visual-screen")?.classList.remove("has-thumbnail");
+                    return;
+                }
+                const thumbnail = await generateVideoThumbnail(previewUrl);
+                if (!image.isConnected || image.dataset.videoId !== videoId) return;
+                if (!thumbnail) {
+                    image.remove();
+                    image.closest(".visual-screen")?.classList.remove("has-thumbnail");
+                    return;
+                }
+                image.src = thumbnail;
+                image.closest(".visual-screen")?.classList.add("has-thumbnail");
+                try {
+                    await saveThumbnail(videoId, thumbnail);
+                } catch (error) {
+                    console.warn(`The generated thumbnail for video ${videoId} could not be saved for later.`, error);
+                }
+                try {
+                    await saveThumbnailToServer(videoId, thumbnail);
+                } catch (error) {
+                    console.warn(`The generated thumbnail for video ${videoId} could not be saved on the server.`, error);
+                }
+            } finally {
+                if (image.dataset.thumbnailRestoring === videoId) {
+                    delete image.dataset.thumbnailRestoring;
+                }
             }
         }
         document.addEventListener("error", (event) => {
             const image = event.target;
-            if (!(image instanceof HTMLImageElement) || !image.matches(".thumb img, .hero-thumbnail")) return;
+            if (!(image instanceof HTMLImageElement) || !image.matches(".thumb img, .visual-thumbnail")) return;
             const previewUrl = image.dataset.previewUrl;
             const videoId = image.dataset.videoId;
-            void restoreCardThumbnail(image, videoId, previewUrl);
+            image.dataset.thumbnailRequestFailed = "true";
+            image.closest(".visual-screen")?.classList.remove("has-thumbnail");
+            void restoreCardThumbnail(image, videoId, previewUrl, image.dataset.thumbnailUrl);
         }, true);
         function youtubeMediaUrl(item) {
             return item.type === "playlist"
@@ -1106,7 +1160,7 @@
             const meta = [video.category, video.subject, duration || formatDate(video.createdAt)].filter(Boolean);
             return `<article class="video-card" data-card-id="${escapeHtml(video.id)}">
                 <a class="video-link" href="${escapeHtml(video.videoUrl || `/show/${encodeURIComponent(video.id)}`)}">
-                    <div class="thumb"><img loading="lazy" ${video.thumbnail ? `src="${escapeHtml(video.thumbnail)}"` : ""} data-video-id="${escapeHtml(video.id)}" data-preview-url="${escapeHtml(video.previewUrl || "")}" alt=""><span class="thumb-play">${icons.play}</span>${duration ? `<span class="thumb-duration">${escapeHtml(duration)}</span>` : ""}<button class="remove-video" data-remove="${escapeHtml(video.id)}" type="button" aria-label="Remove from your lists">${icons.remove}</button><button class="bookmark ${saved ? "saved" : ""}" data-bookmark="${escapeHtml(video.id)}" type="button" aria-label="${saved ? "Remove from watch later" : "Save for later"}">${icons.bookmark}</button></div>
+                    <div class="thumb"><img loading="lazy" data-video-id="${escapeHtml(video.id)}" data-thumbnail-url="${escapeHtml(video.thumbnail || "")}" data-preview-url="${escapeHtml(video.previewUrl || "")}" alt=""><span class="thumb-play">${icons.play}</span>${duration ? `<span class="thumb-duration">${escapeHtml(duration)}</span>` : ""}<button class="remove-video" data-remove="${escapeHtml(video.id)}" type="button" aria-label="Remove from your lists">${icons.remove}</button><button class="bookmark ${saved ? "saved" : ""}" data-bookmark="${escapeHtml(video.id)}" type="button" aria-label="${saved ? "Remove from watch later" : "Save for later"}">${icons.bookmark}</button></div>
                     <div class="card-body"><h3 class="card-title">${escapeHtml(video.title || video.fileName || "Untitled video")}</h3><div class="card-meta">${meta.map((item, index) => `${index ? '<span class="meta-dot"></span>' : ""}<span>${escapeHtml(item)}</span>`).join("") || "<span>Video</span>"}</div>
                     ${progress ? `<div class="progress-track"><div class="progress-fill" style="width:${progress}%"></div></div><div class="progress-copy"><span>${Math.round(progress)}% watched</span><span>Resume</span></div>` : done ? `<div class="progress-copy"><span>${icons.check} Completed</span></div>` : `<span class="card-action">Watch now ↗</span>`}</div>
                 </a>
@@ -1172,30 +1226,15 @@
         }
         async function restoreFeaturedThumbnail(image, video) {
             if (image.dataset.thumbnailRestoring === video.id) return;
-            image.dataset.thumbnailRestoring = video.id;
-            try {
-                let thumbnail = await getSavedThumbnail(video.id);
-                if (!thumbnail && video.previewUrl) {
-                    thumbnail = await generateVideoThumbnail(video.previewUrl);
-                    if (thumbnail) {
-                        try {
-                            await saveThumbnail(video.id, thumbnail);
-                        } catch (error) {
-                            console.warn(`The featured thumbnail for video ${video.id} could not be saved.`, error);
-                        }
-                    }
-                }
-                if (thumbnail && image.isConnected && image.dataset.videoId === video.id) {
-                    image.src = thumbnail;
-                    image.hidden = false;
-                    document.getElementById("continue-feature-screen").classList.add("has-thumbnail");
-                }
-            } catch (error) {
-                console.warn(`The featured thumbnail for video ${video.id} could not be restored.`, error);
-            } finally {
-                if (image.dataset.thumbnailRestoring === video.id) {
-                    delete image.dataset.thumbnailRestoring;
-                }
+            image.hidden = true;
+            await restoreCardThumbnail(
+                image,
+                video.id,
+                video.previewUrl,
+                video.thumbnail
+            );
+            if (image.isConnected && image.dataset.videoId === video.id && image.getAttribute("src")) {
+                image.hidden = false;
             }
         }
         function renderContinueFeature(video) {
@@ -1218,21 +1257,14 @@
             label.textContent = "Continue watching";
             if (!isSameVideo) {
                 image.removeAttribute("src");
-                image.dataset.thumbnailFallbackAttempted = "";
+                image.dataset.thumbnailRequestFailed = "";
                 image.hidden = true;
                 screen.classList.remove("has-thumbnail");
             }
             image.dataset.videoId = video.id;
             image.dataset.previewUrl = video.previewUrl || "";
-            if (video.thumbnail) {
-                if (!isSameVideo || image.getAttribute("src") !== video.thumbnail) {
-                    image.src = video.thumbnail;
-                }
-                image.hidden = false;
-                screen.classList.add("has-thumbnail");
-            } else if (!isSameVideo || image.hidden) {
-                image.hidden = true;
-                screen.classList.remove("has-thumbnail");
+            image.dataset.thumbnailUrl = video.thumbnail || "";
+            if (!isSameVideo || image.hidden || !image.getAttribute("src")) {
                 void restoreFeaturedThumbnail(image, video);
             }
             document.getElementById("continue-feature-title").textContent =
@@ -1273,8 +1305,13 @@
             renderGrid("today-grid", todayList, "No recent lectures.", "Videos sent to the bot in the last 24 hours will appear here.", "clock");
             renderGrid("all-lecture-grid", allLectureList, "No lectures yet.", "Videos you send to the bot will appear here.", "play");
             renderGrid("search-grid", query ? searchList : [], query ? "No videos found." : "Search your collection.", query ? "Try a different title, category, or subject." : "Use the search bar to find a video.", "play");
-            document.querySelectorAll(".thumb img:not([src])").forEach((image) => {
-                void restoreCardThumbnail(image, image.dataset.videoId, image.dataset.previewUrl);
+            document.querySelectorAll(".thumb img").forEach((image) => {
+                void restoreCardThumbnail(
+                    image,
+                    image.dataset.videoId,
+                    image.dataset.previewUrl,
+                    image.dataset.thumbnailUrl
+                );
             });
             setText("continue-count", continueList.length ? `${continueList.length} video${continueList.length === 1 ? "" : "s"}` : "");
             setText("today-count", todayList.length ? `${todayList.length} today` : "");

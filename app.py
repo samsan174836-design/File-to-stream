@@ -41,6 +41,8 @@ from database import db
 
 TELEGRAM_CHUNK_SIZE = 1024 * 1024
 STREAM_PREFETCH_CHUNKS = 16
+THUMBNAIL_FETCH_ATTEMPTS = 3
+MAX_THUMBNAIL_BYTES = 1024 * 1024
 PLAYBACK_CLIENT_COOKIE = "karva_playback_client"
 PLAYBACK_CLIENT_COOKIE_MAX_AGE = 180 * 24 * 60 * 60
 
@@ -1332,49 +1334,135 @@ async def get_catalog(request: Request):
 
 @app.get("/thumbnail/{unique_id}")
 async def stream_thumbnail(request: Request, unique_id: str):
-    """Stream Telegram's actual media thumbnail when one is available."""
+    """Return a cached thumbnail or fetch and cache it from Telegram."""
     message_id = await db.get_link(unique_id)
     if not message_id:
         raise HTTPException(status_code=404, detail="Link expired or invalid.")
+    cached_thumbnail = await db.get_thumbnail(unique_id)
+    if cached_thumbnail:
+        return StreamingResponse(
+            iter([bytes(cached_thumbnail["data"])]),
+            media_type=cached_thumbnail.get("content_type", "image/jpeg"),
+            headers={"Cache-Control": "private, max-age=31536000, immutable"},
+        )
+
     main_bot = multi_clients.get(0)
     if not main_bot:
         raise HTTPException(status_code=503, detail="Bot is not ready.")
-    try:
-        message = await get_media_message(main_bot, message_id)
-        media = message.document or message.video or message.audio
-        if not media:
-            raise HTTPException(status_code=404, detail="Thumbnail not available.")
+    last_error = None
+    for attempt in range(THUMBNAIL_FETCH_ATTEMPTS):
+        try:
+            message = (
+                await get_media_message(main_bot, message_id)
+                if attempt == 0
+                else await main_bot.get_messages(Config.STORAGE_CHANNEL, message_id)
+            )
+            media = message.document or message.video or message.audio
+            if not media:
+                raise HTTPException(status_code=404, detail="Thumbnail not available.")
 
-        thumb = None
-        if getattr(media, "thumbs", None):
-            thumb = media.thumbs[0]
-        elif getattr(media, "thumb", None):
-            thumb = media.thumb
+            thumbs = getattr(media, "thumbs", None) or []
+            thumb = max(
+                thumbs,
+                key=lambda item: getattr(item, "width", 0) * getattr(item, "height", 0),
+                default=getattr(media, "thumb", None),
+            )
+            if not thumb:
+                raise HTTPException(status_code=404, detail="Thumbnail not available.")
 
-        if not thumb:
-            raise HTTPException(status_code=404, detail="Thumbnail not available.")
+            thumbnail_file_id = FileId.decode(thumb.file_id)
+            client_id = min(work_loads, key=work_loads.get)
+            client = multi_clients.get(client_id)
+            if not client:
+                raise HTTPException(status_code=503, detail="Bot is not ready.")
+            streamer = class_cache.get(client) or ByteStreamer(client)
+            class_cache[client] = streamer
+            size = thumb.file_size or 0
+            if not size:
+                raise HTTPException(status_code=404, detail="Thumbnail size is unavailable.")
 
-        thumbnail_file_id = FileId.decode(thumb.file_id)
-        client_id = min(work_loads, key=work_loads.get)
-        client = multi_clients.get(client_id)
-        if not client:
-            raise HTTPException(status_code=503, detail="Bot is not ready.")
-        streamer = class_cache.get(client) or ByteStreamer(client)
-        class_cache[client] = streamer
-        size = thumb.file_size or 0
-        if not size:
-            raise HTTPException(status_code=404, detail="Thumbnail size is unavailable.")
-        body = streamer.yield_file(thumbnail_file_id, client_id, 0, 0, size, 1, size)
-        return StreamingResponse(
-            body,
-            media_type="image/jpeg",
-            headers={"Cache-Control": "private, max-age=3600"},
-        )
-    except HTTPException:
-        raise
-    except Exception:
-        logging.exception("Thumbnail could not be loaded for link %s", unique_id)
-        raise HTTPException(status_code=404, detail="Thumbnail not available.")
+            thumbnail = bytearray()
+            chunk_size = min(
+                TELEGRAM_CHUNK_SIZE,
+                max(1024, math.ceil(size / 1024) * 1024),
+            )
+            part_count = math.ceil(size / chunk_size)
+            async for chunk in streamer.yield_file(
+                thumbnail_file_id,
+                client_id,
+                0,
+                0,
+                size % chunk_size or chunk_size,
+                part_count,
+                chunk_size,
+            ):
+                thumbnail.extend(chunk)
+            if not thumbnail:
+                raise RuntimeError("Telegram returned an empty thumbnail.")
+
+            thumbnail_bytes = bytes(thumbnail)
+            if not await db.save_thumbnail(unique_id, thumbnail_bytes, "image/jpeg"):
+                logging.warning("Thumbnail for link %s could not be cached.", unique_id)
+            return StreamingResponse(
+                iter([thumbnail_bytes]),
+                media_type="image/jpeg",
+                headers={"Cache-Control": "private, max-age=31536000, immutable"},
+            )
+        except HTTPException as error:
+            if error.status_code < 500:
+                raise
+            last_error = error
+        except Exception as error:
+            last_error = error
+            logging.warning(
+                "Thumbnail fetch attempt %s/%s failed for link %s: %s",
+                attempt + 1,
+                THUMBNAIL_FETCH_ATTEMPTS,
+                unique_id,
+                type(error).__name__,
+            )
+
+        if attempt + 1 < THUMBNAIL_FETCH_ATTEMPTS:
+            await asyncio.sleep(0.25 * (2 ** attempt))
+
+    logging.error(
+        "Thumbnail could not be loaded for link %s (%s).",
+        unique_id,
+        type(last_error).__name__ if last_error else "unknown error",
+    )
+    raise HTTPException(status_code=503, detail="Thumbnail could not be loaded.")
+
+
+@app.put("/thumbnail/{unique_id}")
+async def save_generated_thumbnail(request: Request, unique_id: str):
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if content_type not in {"image/jpeg", "image/png", "image/webp"}:
+        raise HTTPException(status_code=415, detail="Unsupported thumbnail image type.")
+    if not await db.get_link(unique_id):
+        raise HTTPException(status_code=404, detail="Link expired or invalid.")
+
+    thumbnail = bytearray()
+    async for chunk in request.stream():
+        thumbnail.extend(chunk)
+        if len(thumbnail) > MAX_THUMBNAIL_BYTES:
+            raise HTTPException(status_code=413, detail="Thumbnail image is too large.")
+    if not thumbnail:
+        raise HTTPException(status_code=400, detail="Thumbnail image is empty.")
+    image_bytes = bytes(thumbnail)
+    valid_image = (
+        content_type == "image/jpeg" and image_bytes.startswith(b"\xff\xd8\xff")
+    ) or (
+        content_type == "image/png" and image_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+    ) or (
+        content_type == "image/webp"
+        and image_bytes.startswith(b"RIFF")
+        and image_bytes[8:12] == b"WEBP"
+    )
+    if not valid_image:
+        raise HTTPException(status_code=415, detail="Thumbnail image data is invalid.")
+    if not await db.save_thumbnail(unique_id, image_bytes, content_type):
+        raise HTTPException(status_code=503, detail="Thumbnail storage is unavailable.")
+    return {"status": "ok"}
 
 @app.get("/show/{unique_id}", response_class=HTMLResponse)
 async def show_page(request: Request, unique_id: str):

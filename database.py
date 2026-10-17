@@ -18,6 +18,7 @@ class Database:
         self.web_login_tokens = None
         self.web_sessions = None
         self.playback_progress = None
+        self.thumbnails = None
         if not Config.DATABASE_URL:
             print("WARNING: DATABASE_URL not set. Links will not be permanent.")
 
@@ -37,6 +38,7 @@ class Database:
             self.web_login_tokens = self.db["web_login_tokens"]
             self.web_sessions = self.db["web_sessions"]
             self.playback_progress = self.db["playback_progress"]
+            self.thumbnails = self.db["thumbnails"]
             await self.collection.create_index(
                 [("source_chat_id", 1), ("source_message_id", 1)],
                 unique=True,
@@ -71,6 +73,7 @@ class Database:
             self.web_login_tokens = None
             self.web_sessions = None
             self.playback_progress = None
+            self.thumbnails = None
 
     async def disconnect(self):
         """Database connection ko band karta hai."""
@@ -279,6 +282,31 @@ class Database:
                 "$set": {
                     "position": position,
                     "duration": duration,
+                    "updated_at": datetime.now(timezone.utc),
+                }
+            },
+            upsert=True,
+        )
+        return True
+
+    async def get_thumbnail(self, unique_id):
+        if self.thumbnails is None:
+            return None
+        thumbnail = await self.thumbnails.find_one(
+            {"_id": unique_id},
+            {"_id": 0, "data": 1, "content_type": 1},
+        )
+        return thumbnail
+
+    async def save_thumbnail(self, unique_id, data, content_type):
+        if self.thumbnails is None:
+            return False
+        await self.thumbnails.update_one(
+            {"_id": unique_id},
+            {
+                "$set": {
+                    "data": data,
+                    "content_type": content_type,
                     "updated_at": datetime.now(timezone.utc),
                 }
             },
