@@ -1198,6 +1198,7 @@ async def get_file_details_api(request: Request, unique_id: str):
         "mime_type": mime_type,
         "bot_username": Config.BOT_USERNAME,
         "stream_url": stream_link,
+        "download_url": f"{stream_link}?download=1",
         "mx_player_link": f"intent:{stream_link}#Intent;action=android.intent.action.VIEW;type={mime_type};end",
         "vlc_player_link": f"intent:{stream_link}#Intent;action=android.intent.action.VIEW;type={mime_type};package=org.videolan.vlc;end"
     }
@@ -1297,12 +1298,19 @@ class ByteStreamer:
                     raise RuntimeError("Telegram did not return a file chunk.")
                 return response.bytes
 
-            next_part = 0
-            while next_part < min(part_count, STREAM_PREFETCH_CHUNKS):
+            first_chunk = await fetch_part(0)
+            if not first_chunk:
+                raise RuntimeError("Telegram returned an empty file chunk.")
+
+            next_part = 1
+            while next_part < min(part_count, STREAM_PREFETCH_CHUNKS + 1):
                 pending[next_part] = asyncio.create_task(fetch_part(next_part))
                 next_part += 1
 
-            for part_index in range(part_count):
+            first_end = last_part_cut if part_count == 1 else len(first_chunk)
+            yield first_chunk[first_part_cut:first_end]
+
+            for part_index in range(1, part_count):
                 chunk = await pending.pop(part_index)
                 if not chunk:
                     raise RuntimeError("Telegram returned an empty file chunk.")
@@ -1311,9 +1319,8 @@ class ByteStreamer:
                     pending[next_part] = asyncio.create_task(fetch_part(next_part))
                     next_part += 1
 
-                start = first_part_cut if part_index == 0 else 0
                 end = last_part_cut if part_index == part_count - 1 else len(chunk)
-                yield chunk[start:end]
+                yield chunk[:end]
         finally:
             for task in pending.values():
                 task.cancel()
@@ -1322,7 +1329,7 @@ class ByteStreamer:
             work_loads[client_id] -= 1
 
 @app.get("/dl/{mid}/{fname}")
-async def stream_media(r:Request,mid:int,fname:str):
+async def stream_media(r:Request,mid:int,fname:str,download:bool=False):
     if not work_loads: raise HTTPException(503)
     client_id = min(work_loads, key=work_loads.get)
     c = multi_clients.get(client_id)
@@ -1369,7 +1376,14 @@ async def stream_media(r:Request,mid:int,fname:str):
         # every source chunk touched by the requested byte range.
         pc=math.ceil((ub-off+1)/cs)
         body=tc.yield_file(fid,client_id,off,fc,lc,pc,cs);sc=206 if rh else 200
-        hdrs={"Content-Type":m.mime_type or "application/octet-stream","Accept-Ranges":"bytes","Cache-Control":"private, no-store, max-age=0","Pragma":"no-cache","Content-Disposition":f'inline; filename="{m.file_name}"',"Content-Length":str(rl),"X-Content-Type-Options":"nosniff"}
+        file_name = m.file_name or "download"
+        fallback_name = re.sub(r"[^A-Za-z0-9._ -]", "_", file_name).replace('"', "_")
+        disposition = "attachment" if download else "inline"
+        content_disposition = (
+            f"{disposition}; filename=\"{fallback_name}\"; "
+            f"filename*=UTF-8''{quote(file_name, safe='')}"
+        )
+        hdrs={"Content-Type":m.mime_type or "application/octet-stream","Accept-Ranges":"bytes","Cache-Control":"private, no-store, max-age=0","Pragma":"no-cache","Content-Disposition":content_disposition,"Content-Length":str(rl),"X-Content-Type-Options":"nosniff"}
         if rh:hdrs["Content-Range"]=f"bytes {fb}-{ub}/{fsize}"
         return StreamingResponse(body,status_code=sc,headers=hdrs)
     except HTTPException:

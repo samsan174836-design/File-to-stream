@@ -563,7 +563,7 @@
 
         .button-grid {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(4, 1fr);
             gap: 8px;
         }
 
@@ -3095,6 +3095,7 @@
                 <a class="btn" id="mx-link" target="_blank" rel="noopener">MX Player</a>
                 <a class="btn" id="vlc-link" target="_blank" rel="noopener">VLC Player</a>
                 <a class="btn teal" id="browser-link">Play in browser</a>
+                <a class="btn" id="download-link" download>Download file</a>
             </div>
 
             <div class="share-row">
@@ -3330,8 +3331,8 @@
         }
 
         function enableAutoStart(media) {
-            const startupBufferSeconds = 2;
-            const maximumBufferWaitMs = 2500;
+            const startupBufferSeconds = 1;
+            const maximumBufferWaitMs = 1500;
             const startedAt = Date.now();
             const watchedEvents = [
                 "loadedmetadata", "loadeddata", "progress", "canplay",
@@ -4282,6 +4283,7 @@
 
                 document.getElementById("mx-link").href = data.mx_player_link || streamUrl;
                 document.getElementById("vlc-link").href = data.vlc_player_link || streamUrl;
+                document.getElementById("download-link").href = data.download_url || `${streamUrl}?download=1`;
                 document.getElementById("bot-link").href =
                     `https://t.me/${data.bot_username || ""}?start=verify_${encodeURIComponent(fileId)}`;
                  musicFileLabel.textContent = `${data.file_name || "This file"} · video hidden`;
