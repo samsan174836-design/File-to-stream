@@ -22,7 +22,7 @@ from zoneinfo import ZoneInfo
 from pyrogram import Client, filters, enums
 from pyrogram.handlers import MessageHandler
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, ChatMemberUpdated
-from pyrogram.errors import FloodWait, UserNotParticipant
+from pyrogram.errors import FloodWait, RPCError, UserNotParticipant
 from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
@@ -374,6 +374,7 @@ Your service is online and ready to manage. You can grant premium access with:
 <code>/add user_id days</code>
 
 Example: <code>/add 123456789 200</code>
+Use <code>/remove user_id</code> to revoke access and <code>/status user_id</code> to check it.
 
 📊 <b>Plans:</b> Free users get 3 links daily; premium users get unlimited links.
 💳 <b>Premium:</b> ₹100/month
@@ -415,7 +416,7 @@ Send your first file whenever you are ready.
         await message.reply_text(reply_text, parse_mode=enums.ParseMode.HTML)
 
 @bot.on_message(filters.command("add") & filters.private)
-async def add_subscription_command(_, message: Message):
+async def add_subscription_command(client: Client, message: Message):
     """Allow the owner to grant or extend a user's paid access."""
     if not message.from_user or message.from_user.id != Config.OWNER_ID:
         await message.reply_text(
@@ -444,6 +445,7 @@ async def add_subscription_command(_, message: Message):
         )
         return
 
+    was_active = await db.get_subscription(target_user_id)
     paid_until = await db.add_subscription(target_user_id, days)
     if not paid_until:
         await message.reply_text(
@@ -452,11 +454,166 @@ async def add_subscription_command(_, message: Message):
         )
         return
 
+    expiry_text = paid_until.astimezone(ZoneInfo("Asia/Kolkata")).strftime(
+        "%d %b %Y, %I:%M %p IST"
+    )
+    notification = (
+        "🔄 <b>Your Premium subscription has been renewed!</b>\n\n"
+        if was_active
+        else "🌟 <b>Your Premium access is now active!</b>\n\n"
+    )
+    notification += (
+        "You can now create unlimited streaming links.\n"
+        f"📅 <b>Valid until:</b> {expiry_text}"
+    )
+    try:
+        await telegram_call_with_retry(
+            lambda: client.send_message(
+                target_user_id,
+                notification,
+                parse_mode=enums.ParseMode.HTML,
+            ),
+            "notifying user about premium activation",
+        )
+        delivery_text = "\n\n📩 User notification sent."
+    except RPCError as error:
+        print(
+            f"Could not notify Telegram user {target_user_id} about premium "
+            f"activation: {type(error).__name__}"
+        )
+        delivery_text = (
+            "\n\n⚠️ Premium was saved, but Telegram could not deliver the "
+            "notification. The user may need to start this bot first or unblock it."
+        )
+
     await message.reply_text(
         "✅ <b>Premium access updated</b>\n\n"
         f"User: <code>{target_user_id}</code>\n"
         f"Added: <b>{days} days</b>\n"
-        f"Valid until: <b>{paid_until.astimezone(ZoneInfo('Asia/Kolkata')).strftime('%d %b %Y, %I:%M %p IST')}</b>",
+        f"Valid until: <b>{expiry_text}</b>"
+        f"{delivery_text}",
+        parse_mode=enums.ParseMode.HTML,
+        quote=True,
+    )
+
+@bot.on_message(filters.command("remove") & filters.private)
+async def remove_subscription_command(client: Client, message: Message):
+    """Allow the owner to revoke a user's paid access."""
+    if not message.from_user or message.from_user.id != Config.OWNER_ID:
+        await message.reply_text(
+            "⛔ <b>Access restricted.</b> This command is available only to the owner.",
+            parse_mode=enums.ParseMode.HTML,
+        )
+        return
+
+    if len(message.command) != 2:
+        await message.reply_text(
+            "<b>Usage:</b> <code>/remove user_id</code>",
+            parse_mode=enums.ParseMode.HTML,
+        )
+        return
+
+    try:
+        target_user_id = int(message.command[1])
+        if target_user_id <= 0:
+            raise ValueError
+    except ValueError:
+        await message.reply_text(
+            "Please provide a valid user ID.",
+            quote=True,
+        )
+        return
+
+    removed = await db.remove_subscription(target_user_id)
+    if removed is None:
+        await message.reply_text(
+            "⚠️ Subscription could not be changed because the database is unavailable.",
+            quote=True,
+        )
+        return
+    if not removed:
+        await message.reply_text(
+            f"No saved Premium subscription was found for <code>{target_user_id}</code>.",
+            parse_mode=enums.ParseMode.HTML,
+            quote=True,
+        )
+        return
+
+    try:
+        await telegram_call_with_retry(
+            lambda: client.send_message(
+                target_user_id,
+                "⚠️ <b>Your Premium access has been removed.</b>\n\n"
+                "Your account is now on the free plan, with 3 links per day.",
+                parse_mode=enums.ParseMode.HTML,
+            ),
+            "notifying user about premium removal",
+        )
+        delivery_text = " User notification sent."
+    except RPCError as error:
+        print(
+            f"Could not notify Telegram user {target_user_id} about premium "
+            f"removal: {type(error).__name__}"
+        )
+        delivery_text = (
+            " Telegram could not deliver the notification; the user may need "
+            "to start this bot first or unblock it."
+        )
+
+    await message.reply_text(
+        f"✅ Premium access removed for <code>{target_user_id}</code>."
+        f"{delivery_text}",
+        parse_mode=enums.ParseMode.HTML,
+        quote=True,
+    )
+
+@bot.on_message(filters.command("status") & filters.private)
+async def subscription_status_command(_, message: Message):
+    """Let the owner verify whether a user's Premium access is active."""
+    if not message.from_user or message.from_user.id != Config.OWNER_ID:
+        await message.reply_text(
+            "⛔ <b>Access restricted.</b> This command is available only to the owner.",
+            parse_mode=enums.ParseMode.HTML,
+        )
+        return
+
+    if len(message.command) != 2:
+        await message.reply_text(
+            "<b>Usage:</b> <code>/status user_id</code>",
+            parse_mode=enums.ParseMode.HTML,
+        )
+        return
+
+    try:
+        target_user_id = int(message.command[1])
+        if target_user_id <= 0:
+            raise ValueError
+    except ValueError:
+        await message.reply_text(
+            "Please provide a valid user ID.",
+            quote=True,
+        )
+        return
+
+    if db.users is None:
+        await message.reply_text(
+            "⚠️ Subscription status is unavailable because the database is not connected.",
+            quote=True,
+        )
+        return
+
+    paid_until = await db.get_subscription(target_user_id)
+    if paid_until:
+        status_text = (
+            f"✅ Premium is active for <code>{target_user_id}</code>.\n"
+            "Valid until: <b>"
+            f"{paid_until.astimezone(ZoneInfo('Asia/Kolkata')).strftime('%d %b %Y, %I:%M %p IST')}"
+            "</b>"
+        )
+    else:
+        status_text = f"ℹ️ Premium is not active for <code>{target_user_id}</code>."
+    await message.reply_text(
+        status_text,
         parse_mode=enums.ParseMode.HTML,
         quote=True,
     )
@@ -622,6 +779,12 @@ def register_additional_bot_handlers(client: Client):
     )
     client.add_handler(
         MessageHandler(add_subscription_command, filters.command("add") & filters.private)
+    )
+    client.add_handler(
+        MessageHandler(remove_subscription_command, filters.command("remove") & filters.private)
+    )
+    client.add_handler(
+        MessageHandler(subscription_status_command, filters.command("status") & filters.private)
     )
     client.add_handler(
         MessageHandler(website_login_command, filters.command("website") & filters.private)

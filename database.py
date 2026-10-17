@@ -180,6 +180,16 @@ class Database:
         )
         return paid_until
 
+    async def remove_subscription(self, user_id):
+        """Remove a user's paid access and report whether a subscription existed."""
+        if self.users is None:
+            return None
+        result = await self.users.update_one(
+            {"_id": user_id, "paid_until": {"$exists": True}},
+            {"$unset": {"paid_until": ""}},
+        )
+        return result.modified_count > 0
+
     async def get_subscription(self, user_id):
         """Return the user's active subscription expiry, if any."""
         if self.users is None:
