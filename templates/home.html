@@ -95,12 +95,21 @@
         .visual-label { position: relative; color: var(--green-800); font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
         .visual-screen { position: relative; display: flex; height: 205px; align-items: center; justify-content: center; margin-top: 18px; overflow: hidden; border-radius: 17px; background: linear-gradient(145deg, #153f31, #0d241c); box-shadow: 0 20px 30px rgba(18, 76, 54, .2); }
         .visual-screen::before { position: absolute; inset: 0; background: radial-gradient(circle at 48% 36%, rgba(104,214,143,.4), transparent 24%), linear-gradient(130deg, transparent 45%, rgba(255,255,255,.08) 45%, transparent 66%); content: ""; }
+        .visual-link { position: relative; display: block; color: inherit; text-decoration: none; }
+        .visual-link[hidden] { display: none; }
+        .visual-screen.has-thumbnail::before { background: linear-gradient(0deg, rgba(12, 8, 19, .5), transparent 48%); }
+        .visual-thumbnail { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
         .visual-play { position: relative; display: grid; width: 58px; height: 58px; place-items: center; padding-left: 3px; border-radius: 50%; color: var(--green-800); background: #fff; box-shadow: 0 13px 28px rgba(0,0,0,.24); font-size: 19px; }
         .visual-bar { position: absolute; right: 15px; bottom: 14px; left: 15px; height: 4px; overflow: hidden; border-radius: 99px; background: rgba(255,255,255,.24); }
         .visual-bar::before { display: block; width: 42%; height: 100%; border-radius: inherit; background: #61d88e; content: ""; }
+        .visual-bar.featured-progress::before { width: var(--watch-progress, 0%); }
         .visual-caption { position: relative; display: flex; align-items: end; justify-content: space-between; gap: 15px; margin-top: 16px; }
         .visual-caption strong { color: var(--green-900); font-size: 16px; letter-spacing: -.02em; }
         .visual-caption span { color: var(--green-700); font-size: 10px; font-weight: 800; }
+        .visual-link .visual-caption strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .visual-link .visual-caption span { flex: 0 0 auto; }
+        .visual-link:hover .visual-play { transform: scale(1.06); }
+        .visual-play { transition: transform .18s ease; }
         .section { margin-top: 38px; }
         .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 17px; }
         .section-heading h2 { margin: 0; color: var(--green-900); font-size: 23px; letter-spacing: -.045em; }
@@ -695,10 +704,20 @@
                             </form>
                             <p class="form-error" id="form-error" role="alert"></p>
                         </div>
-                        <div class="hero-visual" aria-label="Karva Bhaiya player preview">
-                            <div class="visual-label">A better way to press play</div>
-                            <div class="visual-screen"><div class="visual-play" aria-hidden="true">▶</div><div class="visual-bar" aria-hidden="true"></div></div>
-                            <div class="visual-caption"><strong>Your Karva Bhaiya</strong><span>Simple. Private. Yours.</span></div>
+                        <div class="hero-visual" aria-label="Continue watching">
+                            <div class="visual-label" id="hero-visual-label">A better way to press play</div>
+                            <div id="hero-visual-placeholder">
+                                <div class="visual-screen"><div class="visual-play" aria-hidden="true">▶</div><div class="visual-bar" aria-hidden="true"></div></div>
+                                <div class="visual-caption"><strong>Your Karva Bhaiya</strong><span>Simple. Private. Yours.</span></div>
+                            </div>
+                            <a class="visual-link" id="continue-feature" href="#" hidden>
+                                <div class="visual-screen" id="continue-feature-screen">
+                                    <img class="visual-thumbnail" id="continue-feature-thumbnail" alt="" hidden>
+                                    <div class="visual-play" aria-hidden="true">▶</div>
+                                    <div class="visual-bar featured-progress" id="continue-feature-progress" aria-hidden="true"></div>
+                                </div>
+                                <div class="visual-caption"><strong id="continue-feature-title"></strong><span id="continue-feature-watched"></span></div>
+                            </a>
                         </div>
                     </div>
                     <div id="home-sections"></div>
@@ -830,8 +849,80 @@
         }
 
         function youtubeMediaKey(item) { return `${item.type}:${item.id}`; }
+        const thumbnailDatabaseName = "karva-bhaiya:video-thumbnails";
+        let thumbnailDatabasePromise;
+        const persistingThumbnailImages = new WeakSet();
         const generatedThumbnailCache = new Map();
         const pendingThumbnailGenerations = new Map();
+        function openThumbnailDatabase() {
+            if (thumbnailDatabasePromise) return thumbnailDatabasePromise;
+            thumbnailDatabasePromise = new Promise((resolve, reject) => {
+                const request = indexedDB.open(thumbnailDatabaseName, 1);
+                request.onupgradeneeded = () => {
+                    const database = request.result;
+                    if (!database.objectStoreNames.contains("thumbnails")) {
+                        database.createObjectStore("thumbnails", { keyPath: "videoId" });
+                    }
+                };
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error || new Error("Thumbnail storage could not be opened."));
+                request.onblocked = () => reject(new Error("Thumbnail storage upgrade was blocked."));
+            }).catch((error) => {
+                thumbnailDatabasePromise = null;
+                throw error;
+            });
+            return thumbnailDatabasePromise;
+        }
+        async function getSavedThumbnail(videoId) {
+            if (!videoId) return null;
+            const database = await openThumbnailDatabase();
+            return new Promise((resolve, reject) => {
+                const transaction = database.transaction("thumbnails", "readonly");
+                const request = transaction.objectStore("thumbnails").get(videoId);
+                request.onsuccess = () => resolve(request.result?.dataUrl || null);
+                request.onerror = () => reject(request.error || new Error("Saved video thumbnail could not be read."));
+            });
+        }
+        async function saveThumbnail(videoId, dataUrl) {
+            if (!videoId || !dataUrl) return;
+            const database = await openThumbnailDatabase();
+            return new Promise((resolve, reject) => {
+                const transaction = database.transaction("thumbnails", "readwrite");
+                transaction.objectStore("thumbnails").put({ videoId, dataUrl });
+                transaction.oncomplete = () => resolve();
+                transaction.onerror = () => reject(transaction.error || new Error("Video thumbnail could not be saved."));
+                transaction.onabort = () => reject(transaction.error || new Error("Saving the video thumbnail was aborted."));
+            });
+        }
+        function imageToDataUrl(image) {
+            const canvas = document.createElement("canvas");
+            canvas.width = image.naturalWidth;
+            canvas.height = image.naturalHeight;
+            const context = canvas.getContext("2d");
+            if (!context || !canvas.width || !canvas.height) {
+                throw new Error("The video thumbnail image could not be read.");
+            }
+            context.drawImage(image, 0, 0);
+            return canvas.toDataURL("image/jpeg", .88);
+        }
+        async function persistLoadedThumbnail(image) {
+            const videoId = image.dataset.videoId;
+            if (!videoId || !image.isConnected || image.src.startsWith("data:") || persistingThumbnailImages.has(image)) return;
+            persistingThumbnailImages.add(image);
+            try {
+                await saveThumbnail(videoId, imageToDataUrl(image));
+            } catch (error) {
+                console.warn(`The thumbnail for video ${videoId} could not be saved for later.`, error);
+            } finally {
+                persistingThumbnailImages.delete(image);
+            }
+        }
+        document.addEventListener("load", (event) => {
+            const image = event.target;
+            if (image instanceof HTMLImageElement && image.matches(".thumb img, .hero-thumbnail")) {
+                void persistLoadedThumbnail(image);
+            }
+        }, true);
         function generateVideoThumbnail(previewUrl) {
             if (generatedThumbnailCache.has(previewUrl)) {
                 return Promise.resolve(generatedThumbnailCache.get(previewUrl));
@@ -903,17 +994,38 @@
         }
         document.addEventListener("error", (event) => {
             const image = event.target;
-            if (!(image instanceof HTMLImageElement) || !image.matches(".thumb img")) return;
+            if (!(image instanceof HTMLImageElement) || !image.matches(".thumb img, .hero-thumbnail")) return;
             const previewUrl = image.dataset.previewUrl;
+            const videoId = image.dataset.videoId;
             image.removeAttribute("data-preview-url");
-            if (!previewUrl) {
-                image.remove();
-                return;
-            }
-            void generateVideoThumbnail(previewUrl).then((thumbnail) => {
-                if (thumbnail) image.src = thumbnail;
-                else image.remove();
-            });
+            if (image.dataset.thumbnailFallbackAttempted) return;
+            image.dataset.thumbnailFallbackAttempted = "true";
+            void (async () => {
+                try {
+                    const savedThumbnail = await getSavedThumbnail(videoId);
+                    if (savedThumbnail && image.isConnected) {
+                        image.src = savedThumbnail;
+                        return;
+                    }
+                } catch (error) {
+                    console.warn(`The saved thumbnail for video ${videoId} could not be restored.`, error);
+                }
+                if (!previewUrl) {
+                    image.remove();
+                    return;
+                }
+                const thumbnail = await generateVideoThumbnail(previewUrl);
+                if (!thumbnail) {
+                    image.remove();
+                    return;
+                }
+                if (image.isConnected) image.src = thumbnail;
+                try {
+                    await saveThumbnail(videoId, thumbnail);
+                } catch (error) {
+                    console.warn(`The generated thumbnail for video ${videoId} could not be saved for later.`, error);
+                }
+            })();
         }, true);
         function youtubeMediaUrl(item) {
             return item.type === "playlist"
@@ -992,7 +1104,7 @@
             const meta = [video.category, video.subject, duration || formatDate(video.createdAt)].filter(Boolean);
             return `<article class="video-card" data-card-id="${escapeHtml(video.id)}">
                 <a class="video-link" href="${escapeHtml(video.videoUrl || `/show/${encodeURIComponent(video.id)}`)}">
-                    <div class="thumb">${video.thumbnail ? `<img loading="lazy" src="${escapeHtml(video.thumbnail)}" data-preview-url="${escapeHtml(video.previewUrl || "")}" alt="">` : ""}<span class="thumb-play">${icons.play}</span>${duration ? `<span class="thumb-duration">${escapeHtml(duration)}</span>` : ""}<button class="remove-video" data-remove="${escapeHtml(video.id)}" type="button" aria-label="Remove from your lists">${icons.remove}</button><button class="bookmark ${saved ? "saved" : ""}" data-bookmark="${escapeHtml(video.id)}" type="button" aria-label="${saved ? "Remove from watch later" : "Save for later"}">${icons.bookmark}</button></div>
+                    <div class="thumb">${video.thumbnail ? `<img loading="lazy" src="${escapeHtml(video.thumbnail)}" data-video-id="${escapeHtml(video.id)}" data-preview-url="${escapeHtml(video.previewUrl || "")}" alt="">` : ""}<span class="thumb-play">${icons.play}</span>${duration ? `<span class="thumb-duration">${escapeHtml(duration)}</span>` : ""}<button class="remove-video" data-remove="${escapeHtml(video.id)}" type="button" aria-label="Remove from your lists">${icons.remove}</button><button class="bookmark ${saved ? "saved" : ""}" data-bookmark="${escapeHtml(video.id)}" type="button" aria-label="${saved ? "Remove from watch later" : "Save for later"}">${icons.bookmark}</button></div>
                     <div class="card-body"><h3 class="card-title">${escapeHtml(video.title || video.fileName || "Untitled video")}</h3><div class="card-meta">${meta.map((item, index) => `${index ? '<span class="meta-dot"></span>' : ""}<span>${escapeHtml(item)}</span>`).join("") || "<span>Video</span>"}</div>
                     ${progress ? `<div class="progress-track"><div class="progress-fill" style="width:${progress}%"></div></div><div class="progress-copy"><span>${Math.round(progress)}% watched</span><span>Resume</span></div>` : done ? `<div class="progress-copy"><span>${icons.check} Completed</span></div>` : `<span class="card-action">Watch now ↗</span>`}</div>
                 </a>
@@ -1056,12 +1168,83 @@
                 recentLectureRefreshTimer = window.setTimeout(renderAll, nextExpiry - now + 1);
             }
         }
+        async function restoreFeaturedThumbnail(image, video) {
+            if (image.dataset.thumbnailRestoring === video.id) return;
+            image.dataset.thumbnailRestoring = video.id;
+            try {
+                let thumbnail = await getSavedThumbnail(video.id);
+                if (!thumbnail && video.previewUrl) {
+                    thumbnail = await generateVideoThumbnail(video.previewUrl);
+                    if (thumbnail) {
+                        try {
+                            await saveThumbnail(video.id, thumbnail);
+                        } catch (error) {
+                            console.warn(`The featured thumbnail for video ${video.id} could not be saved.`, error);
+                        }
+                    }
+                }
+                if (thumbnail && image.isConnected && image.dataset.videoId === video.id) {
+                    image.src = thumbnail;
+                    image.hidden = false;
+                    document.getElementById("continue-feature-screen").classList.add("has-thumbnail");
+                }
+            } catch (error) {
+                console.warn(`The featured thumbnail for video ${video.id} could not be restored.`, error);
+            } finally {
+                if (image.dataset.thumbnailRestoring === video.id) {
+                    delete image.dataset.thumbnailRestoring;
+                }
+            }
+        }
+        function renderContinueFeature(video) {
+            const feature = document.getElementById("continue-feature");
+            const placeholder = document.getElementById("hero-visual-placeholder");
+            const label = document.getElementById("hero-visual-label");
+            if (!video) {
+                feature.hidden = true;
+                placeholder.hidden = false;
+                label.textContent = "A better way to press play";
+                return;
+            }
+            const progress = progressFor(video);
+            const image = document.getElementById("continue-feature-thumbnail");
+            const screen = document.getElementById("continue-feature-screen");
+            const isSameVideo = image.dataset.videoId === video.id;
+            feature.href = video.videoUrl || `/show/${encodeURIComponent(video.id)}`;
+            feature.hidden = false;
+            placeholder.hidden = true;
+            label.textContent = "Continue watching";
+            if (!isSameVideo) {
+                image.removeAttribute("src");
+                image.dataset.thumbnailFallbackAttempted = "";
+                image.hidden = true;
+                screen.classList.remove("has-thumbnail");
+            }
+            image.dataset.videoId = video.id;
+            image.dataset.previewUrl = video.previewUrl || "";
+            if (video.thumbnail) {
+                if (!isSameVideo || image.getAttribute("src") !== video.thumbnail) {
+                    image.src = video.thumbnail;
+                }
+                image.hidden = false;
+                screen.classList.add("has-thumbnail");
+            } else if (!isSameVideo || image.hidden) {
+                image.hidden = true;
+                screen.classList.remove("has-thumbnail");
+                void restoreFeaturedThumbnail(image, video);
+            }
+            document.getElementById("continue-feature-title").textContent =
+                video.title || video.fileName || "Untitled video";
+            document.getElementById("continue-feature-watched").textContent = `${Math.round(progress)}% watched`;
+            document.getElementById("continue-feature-progress").style.setProperty("--watch-progress", `${progress}%`);
+        }
         function renderHome() {
+            const continueList = sortByRecent(videos.filter((video) => progressFor(video) > 0));
+            renderContinueFeature(continueList[0]);
             if (authRequired) {
                 document.getElementById("home-sections").innerHTML = `<section class="section"><div class="empty-state"><div><div class="empty-state-icon">${icons.bookmark}</div><strong>Private library locked</strong><p>Send /website to your Telegram bot, then enter the login link it sends you.</p><button class="primary-btn" type="button" data-open-login>Enter login link</button></div></div></section>`;
                 return;
             }
-            const continueList = sortByRecent(videos.filter((video) => progressFor(video) > 0));
             const todayList = videos.filter((video) => isRecentLecture(video));
             const recentList = sortByRecent(videos.filter((video) => state.history[video.id])).slice(0, 6);
             const laterList = videos.filter((video) => state.later.includes(video.id));

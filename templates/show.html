@@ -2967,6 +2967,17 @@
             .pomodoro-panel { align-items: stretch; flex-direction: column; }
             .pomodoro-actions button { flex: 1; }
         }
+        .progress-buffer,
+        .progress-bar::-webkit-slider-runnable-track,
+        .progress-bar::-moz-range-track {
+            height: 5px;
+            border-radius: 99px;
+        }
+        .progress-bar::-webkit-slider-runnable-track,
+        .progress-bar::-moz-range-track,
+        .progress-bar::-moz-range-progress {
+            background: transparent;
+        }
         @media (prefers-reduced-motion: reduce) {
             *, *::before, *::after {
                 scroll-behavior: auto !important;
