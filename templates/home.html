@@ -992,40 +992,42 @@
             });
             return generation;
         }
+        async function restoreCardThumbnail(image, videoId, previewUrl) {
+            if (!videoId || !image.isConnected || image.dataset.thumbnailFallbackAttempted === "true") return;
+            image.dataset.thumbnailFallbackAttempted = "true";
+            image.removeAttribute("data-preview-url");
+            try {
+                const savedThumbnail = await getSavedThumbnail(videoId);
+                if (savedThumbnail && image.isConnected && image.dataset.videoId === videoId) {
+                    image.src = savedThumbnail;
+                    return;
+                }
+            } catch (error) {
+                console.warn(`The saved thumbnail for video ${videoId} could not be restored.`, error);
+            }
+            if (!previewUrl) {
+                image.remove();
+                return;
+            }
+            const thumbnail = await generateVideoThumbnail(previewUrl);
+            if (!thumbnail) {
+                image.remove();
+                return;
+            }
+            if (!image.isConnected || image.dataset.videoId !== videoId) return;
+            image.src = thumbnail;
+            try {
+                await saveThumbnail(videoId, thumbnail);
+            } catch (error) {
+                console.warn(`The generated thumbnail for video ${videoId} could not be saved for later.`, error);
+            }
+        }
         document.addEventListener("error", (event) => {
             const image = event.target;
             if (!(image instanceof HTMLImageElement) || !image.matches(".thumb img, .hero-thumbnail")) return;
             const previewUrl = image.dataset.previewUrl;
             const videoId = image.dataset.videoId;
-            image.removeAttribute("data-preview-url");
-            if (image.dataset.thumbnailFallbackAttempted) return;
-            image.dataset.thumbnailFallbackAttempted = "true";
-            void (async () => {
-                try {
-                    const savedThumbnail = await getSavedThumbnail(videoId);
-                    if (savedThumbnail && image.isConnected) {
-                        image.src = savedThumbnail;
-                        return;
-                    }
-                } catch (error) {
-                    console.warn(`The saved thumbnail for video ${videoId} could not be restored.`, error);
-                }
-                if (!previewUrl) {
-                    image.remove();
-                    return;
-                }
-                const thumbnail = await generateVideoThumbnail(previewUrl);
-                if (!thumbnail) {
-                    image.remove();
-                    return;
-                }
-                if (image.isConnected) image.src = thumbnail;
-                try {
-                    await saveThumbnail(videoId, thumbnail);
-                } catch (error) {
-                    console.warn(`The generated thumbnail for video ${videoId} could not be saved for later.`, error);
-                }
-            })();
+            void restoreCardThumbnail(image, videoId, previewUrl);
         }, true);
         function youtubeMediaUrl(item) {
             return item.type === "playlist"
@@ -1104,7 +1106,7 @@
             const meta = [video.category, video.subject, duration || formatDate(video.createdAt)].filter(Boolean);
             return `<article class="video-card" data-card-id="${escapeHtml(video.id)}">
                 <a class="video-link" href="${escapeHtml(video.videoUrl || `/show/${encodeURIComponent(video.id)}`)}">
-                    <div class="thumb">${video.thumbnail ? `<img loading="lazy" src="${escapeHtml(video.thumbnail)}" data-video-id="${escapeHtml(video.id)}" data-preview-url="${escapeHtml(video.previewUrl || "")}" alt="">` : ""}<span class="thumb-play">${icons.play}</span>${duration ? `<span class="thumb-duration">${escapeHtml(duration)}</span>` : ""}<button class="remove-video" data-remove="${escapeHtml(video.id)}" type="button" aria-label="Remove from your lists">${icons.remove}</button><button class="bookmark ${saved ? "saved" : ""}" data-bookmark="${escapeHtml(video.id)}" type="button" aria-label="${saved ? "Remove from watch later" : "Save for later"}">${icons.bookmark}</button></div>
+                    <div class="thumb"><img loading="lazy" ${video.thumbnail ? `src="${escapeHtml(video.thumbnail)}"` : ""} data-video-id="${escapeHtml(video.id)}" data-preview-url="${escapeHtml(video.previewUrl || "")}" alt=""><span class="thumb-play">${icons.play}</span>${duration ? `<span class="thumb-duration">${escapeHtml(duration)}</span>` : ""}<button class="remove-video" data-remove="${escapeHtml(video.id)}" type="button" aria-label="Remove from your lists">${icons.remove}</button><button class="bookmark ${saved ? "saved" : ""}" data-bookmark="${escapeHtml(video.id)}" type="button" aria-label="${saved ? "Remove from watch later" : "Save for later"}">${icons.bookmark}</button></div>
                     <div class="card-body"><h3 class="card-title">${escapeHtml(video.title || video.fileName || "Untitled video")}</h3><div class="card-meta">${meta.map((item, index) => `${index ? '<span class="meta-dot"></span>' : ""}<span>${escapeHtml(item)}</span>`).join("") || "<span>Video</span>"}</div>
                     ${progress ? `<div class="progress-track"><div class="progress-fill" style="width:${progress}%"></div></div><div class="progress-copy"><span>${Math.round(progress)}% watched</span><span>Resume</span></div>` : done ? `<div class="progress-copy"><span>${icons.check} Completed</span></div>` : `<span class="card-action">Watch now ↗</span>`}</div>
                 </a>
@@ -1271,6 +1273,9 @@
             renderGrid("today-grid", todayList, "No recent lectures.", "Videos sent to the bot in the last 24 hours will appear here.", "clock");
             renderGrid("all-lecture-grid", allLectureList, "No lectures yet.", "Videos you send to the bot will appear here.", "play");
             renderGrid("search-grid", query ? searchList : [], query ? "No videos found." : "Search your collection.", query ? "Try a different title, category, or subject." : "Use the search bar to find a video.", "play");
+            document.querySelectorAll(".thumb img:not([src])").forEach((image) => {
+                void restoreCardThumbnail(image, image.dataset.videoId, image.dataset.previewUrl);
+            });
             setText("continue-count", continueList.length ? `${continueList.length} video${continueList.length === 1 ? "" : "s"}` : "");
             setText("today-count", todayList.length ? `${todayList.length} today` : "");
             setText("all-lecture-count", allLectureList.length ? `${allLectureList.length} video${allLectureList.length === 1 ? "" : "s"}` : "");

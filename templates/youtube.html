@@ -48,25 +48,6 @@
         }
         .player-message[hidden] { display: none; }
         .player-message p { max-width: 540px; margin: 0 auto; color: #c5b8d2; line-height: 1.6; }
-        .controls { display: grid; gap: 8px; padding: 14px 16px 12px; }
-        .progress-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; }
-        .time { min-width: 42px; color: #d7cbe2; font-size: 12px; font-variant-numeric: tabular-nums; }
-        input[type="range"] { width: 100%; accent-color: #bd9ce0; cursor: pointer; }
-        #progress { height: 18px; margin: 0; }
-        .button-row { display: flex; align-items: center; gap: 9px; }
-        .control {
-            min-width: 42px;
-            min-height: 38px;
-            padding: 0 10px;
-            border: 1px solid rgba(224, 205, 242, .22);
-            border-radius: 9px;
-            color: #f5effb;
-            background: rgba(240, 231, 248, .1);
-            cursor: pointer;
-        }
-        .control:hover:not(:disabled) { background: rgba(174, 145, 209, .3); }
-        .control:disabled { cursor: not-allowed; opacity: .5; }
-        .spacer { flex: 1; }
         .shortcuts { margin: 3px 0 0; color: #a99bb6; font-size: 12px; line-height: 1.6; }
         .external-link {
             display: inline-flex;
@@ -84,9 +65,6 @@
         @media (max-width: 520px) {
             .page { width: min(100% - 24px, 1040px); padding-top: 20px; }
             .player-shell { border-radius: 12px; }
-            .controls { padding: 10px; }
-            .button-row { gap: 5px; }
-            .control { min-width: 37px; min-height: 36px; padding: 0 7px; }
         }
         @media (prefers-reduced-motion: reduce) {
             *, *::before, *::after { scroll-behavior: auto !important; }
@@ -105,24 +83,8 @@
                     <a class="external-link" id="fallback-link" href="https://www.yout-ube.com/watch?v={{ video_id }}" target="_blank" rel="noopener noreferrer" hidden>Open on YouTube</a>
                 </div>
             </div>
-            <div class="controls" aria-label="Playback controls">
-                <div class="progress-row">
-                    <span class="time" id="current-time">0:00</span>
-                    <input id="progress" type="range" min="0" max="1000" value="0" aria-label="Video progress" disabled>
-                    <span class="time" id="duration">0:00</span>
-                </div>
-                <div class="button-row">
-                    <button class="control" id="play-toggle" type="button" aria-label="Play or pause" disabled>▶</button>
-                    <button class="control" id="backward" type="button" aria-label="Back 10 seconds" disabled>−10s</button>
-                    <button class="control" id="forward" type="button" aria-label="Forward 10 seconds" disabled>+10s</button>
-                    <button class="control" id="mute-toggle" type="button" aria-label="Mute or unmute" disabled>Mute</button>
-                    <span class="spacer"></span>
-                    <button class="control" id="speed-toggle" type="button" aria-label="Playback speed (S)" title="Playback speed (S)" disabled>1×</button>
-                    <button class="control" id="fullscreen-toggle" type="button" aria-label="Fullscreen">⛶</button>
-                </div>
-            </div>
         </section>
-        <p class="shortcuts">Shortcuts: <strong>Space/K</strong> play or pause · <strong>←/→</strong> seek 10s · <strong>↑/↓</strong> volume · <strong>M</strong> mute · <strong>S</strong> speed · <strong>F</strong> fullscreen. If the YouTube frame is focused, use its built-in shortcuts; browser security keeps keys typed inside the frame separate from this page.</p>
+        <p class="shortcuts">Shortcuts (while this page has focus): <strong>Space/K</strong> play or pause · <strong>←/→</strong> seek 10s · <strong>↑/↓</strong> volume · <strong>M</strong> mute · <strong>S</strong> speed · <strong>F</strong> fullscreen.</p>
         <a class="external-link" href="https://www.yout-ube.com/watch?v={{ video_id }}" target="_blank" rel="noopener noreferrer">Open video on YouTube</a>
     </main>
     <script>
@@ -130,26 +92,9 @@
         const playerMessage = document.getElementById("player-message");
         const messageCopy = document.getElementById("message-copy");
         const fallbackLink = document.getElementById("fallback-link");
-        const progress = document.getElementById("progress");
-        const currentTimeLabel = document.getElementById("current-time");
-        const durationLabel = document.getElementById("duration");
-        const playToggle = document.getElementById("play-toggle");
-        const muteToggle = document.getElementById("mute-toggle");
-        const speedToggle = document.getElementById("speed-toggle");
         let player;
         let availableSpeeds = [1];
         let currentSpeedIndex = 0;
-        let isSeeking = false;
-        let statusTimer;
-
-        function formatTime(value) {
-            if (!Number.isFinite(value) || value < 0) return "0:00";
-            const seconds = Math.floor(value);
-            const hours = Math.floor(seconds / 3600);
-            const minutes = Math.floor((seconds % 3600) / 60);
-            const remainder = String(seconds % 60).padStart(2, "0");
-            return hours ? `${hours}:${String(minutes).padStart(2, "0")}:${remainder}` : `${minutes}:${remainder}`;
-        }
 
         function showMessage(message, showFallback = false) {
             messageCopy.textContent = message;
@@ -158,40 +103,16 @@
         }
 
         function enableControls() {
-            document.querySelectorAll(".controls button, #progress").forEach((control) => {
-                control.disabled = false;
-            });
+            player.getIframe().tabIndex = -1;
             availableSpeeds = player.getAvailablePlaybackRates().filter((rate) => rate > 0);
             if (!availableSpeeds.length) availableSpeeds = [1];
             currentSpeedIndex = Math.max(0, availableSpeeds.indexOf(player.getPlaybackRate()));
-            updateSpeedLabel();
             playerMessage.hidden = true;
-            statusTimer = window.setInterval(updatePlayerUi, 500);
-            updatePlayerUi();
-        }
-
-        function updateSpeedLabel() {
-            speedToggle.textContent = `${availableSpeeds[currentSpeedIndex]}×`;
-            speedToggle.disabled = availableSpeeds.length < 2;
         }
 
         function updatePlayerUi() {
-            if (!player || typeof player.getDuration !== "function") return;
-            const total = player.getDuration();
-            const current = player.getCurrentTime();
-            if (Number.isFinite(total) && total > 0) {
-                durationLabel.textContent = formatTime(total);
-                if (!isSeeking) progress.value = String(Math.round(Math.min(1, current / total) * 1000));
-            }
-            currentTimeLabel.textContent = formatTime(current);
-            muteToggle.textContent = player.isMuted() ? "Unmute" : "Mute";
-            const activeSpeedIndex = availableSpeeds.indexOf(player.getPlaybackRate());
-            if (activeSpeedIndex >= 0 && activeSpeedIndex !== currentSpeedIndex) {
-                currentSpeedIndex = activeSpeedIndex;
-                updateSpeedLabel();
-            }
+            if (!player || typeof player.getPlayerState !== "function") return;
             const state = player.getPlayerState();
-            playToggle.textContent = state === YT.PlayerState.PLAYING ? "Ⅱ" : "▶";
             if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.PAUSED) {
                 playerMessage.hidden = true;
             }
@@ -215,7 +136,6 @@
             if (!player || availableSpeeds.length < 2) return;
             currentSpeedIndex = (currentSpeedIndex + 1) % availableSpeeds.length;
             player.setPlaybackRate(availableSpeeds[currentSpeedIndex]);
-            updateSpeedLabel();
         }
 
         window.onYouTubeIframeAPIReady = () => {
@@ -243,38 +163,13 @@
             });
         };
 
-        playToggle.addEventListener("click", togglePlayback);
-        document.getElementById("backward").addEventListener("click", () => seekBy(-10));
-        document.getElementById("forward").addEventListener("click", () => seekBy(10));
-        muteToggle.addEventListener("click", () => {
-            if (!player) return;
-            if (player.isMuted()) player.unMute();
-            else player.mute();
-            updatePlayerUi();
-        });
-        speedToggle.addEventListener("click", cycleSpeed);
-        document.getElementById("fullscreen-toggle").addEventListener("click", async () => {
-            const frame = document.querySelector(".video-frame");
-            if (document.fullscreenElement) await document.exitFullscreen();
-            else if (frame.requestFullscreen) await frame.requestFullscreen();
-        });
-        progress.addEventListener("input", () => {
-            isSeeking = true;
-            const total = player ? player.getDuration() : 0;
-            currentTimeLabel.textContent = formatTime(total * Number(progress.value) / 1000);
-        });
-        progress.addEventListener("change", () => {
-            if (player) player.seekTo(player.getDuration() * Number(progress.value) / 1000, true);
-            isSeeking = false;
-            updatePlayerUi();
-        });
         document.addEventListener("keydown", (event) => {
             if (!player) return;
             const target = event.target;
             if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement
                 || target instanceof HTMLSelectElement || target.isContentEditable) return;
-            if (event.key === " " && target.closest("button, a")) return;
-            if ((event.ctrlKey || event.metaKey || event.altKey) && /^[sSfF]$/.test(event.key)) return;
+            if (event.key === " " && target instanceof Element && target.closest("button, a")) return;
+            if (event.ctrlKey || event.metaKey || event.altKey) return;
             const key = event.key.toLowerCase();
             if (![" ", "k", "arrowleft", "arrowright", "arrowup", "arrowdown", "m", "s", "f"].includes(key)) return;
             if (event.repeat) return;
@@ -293,14 +188,12 @@
                 if (document.fullscreenElement) void document.exitFullscreen();
                 else if (frame.requestFullscreen) void frame.requestFullscreen();
             }
-            updatePlayerUi();
         });
 
         const apiScript = document.createElement("script");
         apiScript.src = "https://www.youtube.com/iframe_api";
         apiScript.onerror = () => showMessage("The YouTube player could not be loaded. Check your connection and try opening the video on YouTube.", true);
         document.head.append(apiScript);
-        window.addEventListener("beforeunload", () => window.clearInterval(statusTimer));
     </script>
 </body>
 </html>
