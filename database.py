@@ -131,13 +131,14 @@ class Database:
             {"$setOnInsert": {"quota_day": quota_day, "daily_count": 0}},
             upsert=True,
         )
-        user = await self.users.find_one({"_id": user_id}) or {}
-        paid_until = user.get("paid_until")
-        if paid_until and paid_until.tzinfo is None:
-            paid_until = paid_until.replace(tzinfo=timezone.utc)
-        if paid_until and paid_until > now:
+        active_subscription = await self.users.find_one(
+            {"_id": user_id, "paid_until": {"$gt": now}},
+            {"_id": 1},
+        )
+        if active_subscription:
             return True, True
 
+        user = await self.users.find_one({"_id": user_id}) or {}
         if user.get("quota_day") != quota_day:
             result = await self.users.update_one(
                 {"_id": user_id, "quota_day": {"$ne": quota_day}},

@@ -783,24 +783,22 @@ async def library_section_page(request: Request):
         context={"request": request, "bot_ready": bot_ready, "initial_view": section},
     )
 
-@app.get("/yt/playlist/{playlist_id}", response_class=HTMLResponse)
-async def youtube_playlist_page(request: Request, playlist_id: str):
+@app.get("/yt/playlist/{playlist_id}")
+async def youtube_playlist_page(playlist_id: str):
     if not re.fullmatch(r"[A-Za-z0-9_-]{10,64}", playlist_id):
         raise HTTPException(status_code=404, detail="Invalid YouTube playlist.")
-    return templates.TemplateResponse(
-        request=request,
-        name="youtube.html",
-        context={"request": request, "media_type": "playlist", "media_id": playlist_id},
+    return RedirectResponse(
+        url=f"https://www.yout-ube.com/playlist?list={quote(playlist_id)}",
+        status_code=307,
     )
 
-@app.get("/yt/{video_id}", response_class=HTMLResponse)
-async def youtube_video_page(request: Request, video_id: str):
+@app.get("/yt/{video_id}")
+async def youtube_video_page(video_id: str):
     if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
         raise HTTPException(status_code=404, detail="Invalid YouTube video.")
-    return templates.TemplateResponse(
-        request=request,
-        name="youtube.html",
-        context={"request": request, "media_type": "video", "media_id": video_id},
+    return RedirectResponse(
+        url=f"https://www.yout-ube.com/watch?v={quote(video_id)}",
+        status_code=307,
     )
 
 @app.get("/health")
@@ -860,6 +858,38 @@ def _youtube_api_get(endpoint: str, params: dict) -> dict:
     with urllib.request.urlopen(request, timeout=10) as response:
         return json.load(response)
 
+def _youtube_suggestions(query: str) -> list[str]:
+    request = urllib.request.Request(
+        "https://suggestqueries.google.com/complete/search?"
+        + urllib.parse.urlencode({"client": "firefox", "ds": "yt", "q": query}),
+        headers={"Accept": "application/json"},
+    )
+    with urllib.request.urlopen(request, timeout=5) as response:
+        payload = json.load(response)
+    suggestions = payload[1] if isinstance(payload, list) and len(payload) > 1 else []
+    return [
+        suggestion
+        for suggestion in suggestions
+        if isinstance(suggestion, str)
+    ][:8]
+
+@app.get("/api/youtube/suggestions", response_class=JSONResponse)
+async def youtube_search_suggestions(request: Request, q: str):
+    if await get_web_user_id(request) is None:
+        raise HTTPException(status_code=401, detail="Open the website from the Telegram bot to search videos.")
+    query = q.strip()
+    if len(query) < 2 or len(query) > 100:
+        raise HTTPException(status_code=400, detail="Enter a search term of 2 to 100 characters.")
+    try:
+        suggestions = await asyncio.to_thread(_youtube_suggestions, query)
+    except urllib.error.HTTPError as error:
+        logging.warning("YouTube suggestions returned HTTP %s", error.code)
+        raise HTTPException(status_code=502, detail="YouTube suggestions are temporarily unavailable.") from error
+    except (urllib.error.URLError, OSError, json.JSONDecodeError, ValueError) as error:
+        logging.warning("YouTube suggestions request failed: %s", type(error).__name__)
+        raise HTTPException(status_code=502, detail="YouTube suggestions are temporarily unavailable.") from error
+    return {"suggestions": suggestions}
+
 def _youtube_duration_seconds(duration: str) -> int:
     match = re.fullmatch(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", duration or "")
     if not match:
@@ -873,13 +903,22 @@ def _youtube_is_short(duration: int, title: str, description: str) -> bool:
     )
 
 @app.get("/api/youtube/search", response_class=JSONResponse)
-async def search_youtube_videos(request: Request, q: str):
+async def search_youtube_videos(
+    request: Request,
+    q: str,
+    page_token: str = "",
+    playlist_page_token: str = "",
+    include_videos: bool = True,
+    include_playlists: bool = True,
+):
     """Search non-live YouTube videos and playlists, excluding Shorts."""
     if await get_web_user_id(request) is None:
         raise HTTPException(status_code=401, detail="Open the website from the Telegram bot to search videos.")
     query = q.strip()
     if not query or len(query) > 100:
         raise HTTPException(status_code=400, detail="Enter a search term of 1 to 100 characters.")
+    if len(page_token) > 512 or len(playlist_page_token) > 512:
+        raise HTTPException(status_code=400, detail="Invalid YouTube search page token.")
     if not Config.YOUTUBE_API_KEY:
         raise HTTPException(status_code=503, detail="YouTube search is not configured.")
 
@@ -889,19 +928,29 @@ async def search_youtube_videos(request: Request, q: str):
         "maxResults": 50,
         "safeSearch": "strict",
     }
+    video_search_params = {**search_params, "type": "video"}
+    if page_token:
+        video_search_params["pageToken"] = page_token
+    playlist_search_params = {**search_params, "type": "playlist"}
+    if playlist_page_token:
+        playlist_search_params["pageToken"] = playlist_page_token
     try:
-        video_results, playlist_results = await asyncio.gather(
-            asyncio.to_thread(
+        search_tasks = []
+        if include_videos:
+            search_tasks.append(asyncio.to_thread(
                 _youtube_api_get,
                 "search",
-                {**search_params, "type": "video"},
-            ),
-            asyncio.to_thread(
+                video_search_params,
+            ))
+        if include_playlists:
+            search_tasks.append(asyncio.to_thread(
                 _youtube_api_get,
                 "search",
-                {**search_params, "type": "playlist"},
-            ),
-        )
+                playlist_search_params,
+            ))
+        search_pages = iter(await asyncio.gather(*search_tasks))
+        video_results = next(search_pages) if include_videos else {"items": []}
+        playlist_results = next(search_pages) if include_playlists else {"items": []}
         candidates = []
         for item in video_results.get("items", []):
             video_id = item.get("id", {}).get("videoId", "")
@@ -1015,7 +1064,11 @@ async def search_youtube_videos(request: Request, q: str):
             "itemCount": playlist.get("contentDetails", {}).get("itemCount", 0),
         })
 
-    return {"videos": results}
+    return {
+        "videos": results,
+        "nextPageToken": video_results.get("nextPageToken"),
+        "nextPlaylistPageToken": playlist_results.get("nextPageToken"),
+    }
 
 def _catalog_title(file_name: str) -> str:
     """Keep the original filename visible while removing only its extension."""

@@ -54,7 +54,7 @@ messages. Setting or changing Heroku Config Vars restarts the dyno; wait until
 any active Telegram FloodWait period has ended before changing them.
 
 `BASE_URL` must be the public HTTPS app URL and must not end with `/`.
-`YOUTUBE_API_KEY` is optional; set it to enable Study & Knowledge YouTube search. Enable the YouTube Data API v3 in Google Cloud and restrict the key to that API.
+`YOUTUBE_API_KEY` is optional; set it to enable YouTube search. Enable the YouTube Data API v3 in Google Cloud and restrict the key to that API.
 
 ## 3. Deploy
 

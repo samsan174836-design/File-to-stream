@@ -2159,7 +2159,7 @@
         .progress-buffer,
         .progress-bar::-webkit-slider-runnable-track,
         .progress-bar::-moz-range-track {
-            height: 7px;
+            height: 9px;
             border-radius: 99px;
         }
 
@@ -2270,7 +2270,7 @@
             .progress-buffer,
             .progress-bar::-webkit-slider-runnable-track,
             .progress-bar::-moz-range-track {
-                height: 6px;
+                height: 9px;
             }
 
             .progress-bar::-webkit-slider-thumb {
@@ -4266,28 +4266,30 @@
                 const mime = data.mime_type || "";
                 const isVideo = mime.startsWith("video/");
                 const isAudio = mime.startsWith("audio/");
+                const originalFileName = data.file_name || "This file";
+                const displayFileName = originalFileName.replace(/\.mp4$/i, "") || "This file";
 
                 if (isVideo || isAudio) {
                     loader.textContent = isVideo ? "Video loading..." : "Audio loading...";
                     loader.hidden = false;
                 }
 
-                setText("file-name", data.file_name);
+                setText("file-name", displayFileName);
                 setText("file-size", data.file_size);
                 setText("size-card", data.file_size);
                 setText("format", mime.split("/").pop()?.toUpperCase() || "FILE");
                 setText("file-type", isVideo ? "VIDEO" : isAudio ? "AUDIO" : "FILE");
                 setText("report-id", fileId);
-                document.title = `${data.file_name} • Karva Bhaiya`;
-                 configureMediaSession(data.file_name);
+                document.title = `${displayFileName} • Karva Bhaiya`;
+                configureMediaSession(displayFileName);
 
                 document.getElementById("mx-link").href = data.mx_player_link || streamUrl;
                 document.getElementById("vlc-link").href = data.vlc_player_link || streamUrl;
                 document.getElementById("download-link").href = data.download_url || `${streamUrl}?download=1`;
                 document.getElementById("bot-link").href =
                     `https://t.me/${data.bot_username || ""}?start=verify_${encodeURIComponent(fileId)}`;
-                 musicFileLabel.textContent = `${data.file_name || "This file"} · video hidden`;
-                 musicModeToggle.hidden = !isVideo;
+                musicFileLabel.textContent = `${displayFileName} · video hidden`;
+                musicModeToggle.hidden = !isVideo;
 
                 if (isVideo) {
                     pomodoroPanel.hidden = false;
@@ -4314,7 +4316,7 @@
                     document.getElementById("browser-link").classList.add("disabled");
                 }
 
-                document.getElementById("file-name").title = data.file_name || "";
+                document.getElementById("file-name").title = displayFileName;
                 playerFileHeading.hidden = false;
                 content.hidden = false;
             } catch (error) {
