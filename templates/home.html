@@ -163,6 +163,7 @@
         .study-result img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background: #eaf2ec; }
         .study-result-copy { padding: 12px; }
         .study-result-title { display: -webkit-box; min-height: 38px; margin: 0 0 8px; overflow: hidden; color: var(--green-900); font-size: 13px; font-weight: 800; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+        .study-result-stats { display: flex; flex-wrap: wrap; gap: 5px; margin: -3px 0 8px; color: var(--muted); font-size: 11px; line-height: 1.4; }
         .study-result-meta { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 11px; }
         .study-result-channel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .youtube-save-button { width: calc(100% - 24px); min-height: 34px; margin: 0 12px 12px; border: 1px solid var(--line); border-radius: 9px; color: var(--green-800); background: var(--green-50); font-size: 11px; font-weight: 800; }
@@ -710,7 +711,7 @@
                 <section class="view" id="view-all-lecture" data-view-panel="all-lecture"><div class="page-title"><div><h1>All Lecture</h1><p>All videos you have sent to the bot.</p></div><span class="result-count" id="all-lecture-count"></span></div><div id="all-lecture-grid"></div></section>
                 <section class="view" id="view-search" data-view-panel="search"><div class="page-title"><div><h1>Search</h1><p>Find a title, subject, category, or filename.</p></div><span class="result-count" id="search-count"></span></div><div id="search-grid"></div></section>
                 <section class="view" id="view-study" data-view-panel="study">
-                    <div class="page-title"><div><h1>YouTube</h1><p>Search videos and playlists, save them for later, and open them on yout-ube.</p></div></div>
+                    <div class="page-title"><div><h1>YouTube</h1><p>Search videos and playlists, save them for later, and play videos on your own page.</p></div></div>
                     <form class="study-search-form" id="youtube-search-form">
                         <div class="youtube-search-wrap">
                             <input class="study-search-input" id="youtube-search-input" type="search" maxlength="100" placeholder="Search YouTube" aria-label="Search YouTube videos" aria-autocomplete="list" aria-controls="youtube-suggestions" aria-expanded="false" required>
@@ -718,7 +719,7 @@
                         </div>
                         <button class="primary-btn" type="submit">Search YouTube</button>
                     </form>
-                    <p class="study-status" id="youtube-search-status" role="status" aria-live="polite">Suggestions appear as you type. Videos that do not allow embedding also open on yout-ube; Shorts and live streams are excluded.</p>
+                    <p class="study-status" id="youtube-search-status" role="status" aria-live="polite">Suggestions appear as you type. Videos that do not allow embedding can still be opened on YouTube; Shorts and live streams are excluded.</p>
                     <div class="study-results" id="youtube-results"></div>
                     <button class="secondary-btn youtube-load-more" id="youtube-load-more" type="button" hidden>Load more</button>
                 </section>
@@ -829,10 +830,124 @@
         }
 
         function youtubeMediaKey(item) { return `${item.type}:${item.id}`; }
+        const generatedThumbnailCache = new Map();
+        const pendingThumbnailGenerations = new Map();
+        function generateVideoThumbnail(previewUrl) {
+            if (generatedThumbnailCache.has(previewUrl)) {
+                return Promise.resolve(generatedThumbnailCache.get(previewUrl));
+            }
+            if (pendingThumbnailGenerations.has(previewUrl)) {
+                return pendingThumbnailGenerations.get(previewUrl);
+            }
+            const generation = new Promise((resolve) => {
+                const video = document.createElement("video");
+                video.muted = true;
+                video.preload = "metadata";
+                let timeout;
+                const finish = (thumbnail = null) => {
+                    window.clearTimeout(timeout);
+                    video.pause();
+                    video.removeAttribute("src");
+                    video.load();
+                    resolve(thumbnail);
+                };
+                const capture = () => {
+                    try {
+                        if (!video.videoWidth || !video.videoHeight) {
+                            finish();
+                            return;
+                        }
+                        const scale = Math.min(480 / video.videoWidth, 270 / video.videoHeight, 1);
+                        const canvas = document.createElement("canvas");
+                        canvas.width = Math.round(video.videoWidth * scale);
+                        canvas.height = Math.round(video.videoHeight * scale);
+                        const context = canvas.getContext("2d");
+                        if (!context) {
+                            finish();
+                            return;
+                        }
+                        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                        finish(canvas.toDataURL("image/jpeg", .82));
+                    } catch (error) {
+                        console.warn("A video thumbnail could not be generated from its preview.", error);
+                        finish();
+                    }
+                };
+                video.addEventListener("error", () => {
+                    console.warn("A video preview could not be loaded to generate its thumbnail.");
+                    finish();
+                }, { once: true });
+                video.addEventListener("loadedmetadata", () => {
+                    const seekTime = Number.isFinite(video.duration) && video.duration > .2
+                        ? Math.min(1, video.duration / 10)
+                        : 0;
+                    if (seekTime) {
+                        video.addEventListener("seeked", capture, { once: true });
+                        video.currentTime = seekTime;
+                    } else {
+                        video.addEventListener("loadeddata", capture, { once: true });
+                    }
+                }, { once: true });
+                timeout = window.setTimeout(() => {
+                    console.warn("Timed out while generating a video thumbnail.");
+                    finish();
+                }, 12000);
+                video.src = previewUrl;
+            });
+            pendingThumbnailGenerations.set(previewUrl, generation);
+            generation.then((thumbnail) => {
+                pendingThumbnailGenerations.delete(previewUrl);
+                if (thumbnail) generatedThumbnailCache.set(previewUrl, thumbnail);
+            });
+            return generation;
+        }
+        document.addEventListener("error", (event) => {
+            const image = event.target;
+            if (!(image instanceof HTMLImageElement) || !image.matches(".thumb img")) return;
+            const previewUrl = image.dataset.previewUrl;
+            image.removeAttribute("data-preview-url");
+            if (!previewUrl) {
+                image.remove();
+                return;
+            }
+            void generateVideoThumbnail(previewUrl).then((thumbnail) => {
+                if (thumbnail) image.src = thumbnail;
+                else image.remove();
+            });
+        }, true);
         function youtubeMediaUrl(item) {
             return item.type === "playlist"
                 ? `https://www.yout-ube.com/playlist?list=${encodeURIComponent(item.id)}`
-                : `https://www.yout-ube.com/watch?v=${encodeURIComponent(item.id)}`;
+                : `/youtube/${encodeURIComponent(item.id)}?title=${encodeURIComponent(item.title || "")}`;
+        }
+        function formatYoutubeViews(value) {
+            const count = Number(value);
+            if (!Number.isFinite(count) || count < 0) return "";
+            return `${new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(count)} views`;
+        }
+        function formatYoutubeUploadAge(value) {
+            const publishedAt = Date.parse(value || "");
+            if (!Number.isFinite(publishedAt)) return "";
+            const ageSeconds = Math.max(0, (Date.now() - publishedAt) / 1000);
+            if (ageSeconds < 60) return "just now";
+            const units = [
+                ["year", 31536000],
+                ["month", 2592000],
+                ["week", 604800],
+                ["day", 86400],
+                ["hour", 3600],
+                ["minute", 60]
+            ];
+            const [unit, seconds] = units.find(([, unitSeconds]) => ageSeconds >= unitSeconds);
+            return new Intl.RelativeTimeFormat(undefined, { numeric: "auto" })
+                .format(-Math.floor(ageSeconds / seconds), unit);
+        }
+        function youtubeStatsMarkup(item) {
+            if (item.type !== "video") return "";
+            const stats = [formatYoutubeViews(item.viewCount), formatYoutubeUploadAge(item.publishedAt)].filter(Boolean);
+            return stats.length
+                ? `<div class="study-result-stats">${stats.map(escapeHtml).join("<span aria-hidden=\"true\">·</span>")}</div>`
+                : "";
         }
         function youtubeCardMarkup(item, removable = false) {
             const duration = item.type === "video" ? formatDuration(item.duration) : `${Number(item.itemCount) || 0} videos`;
@@ -841,6 +956,7 @@
                     <img loading="lazy" src="${escapeHtml(item.thumbnail || "")}" alt="">
                     <div class="study-result-copy">
                         <h2 class="study-result-title">${escapeHtml(item.title)}</h2>
+                        ${youtubeStatsMarkup(item)}
                         <div class="study-result-meta"><span class="study-result-channel">${escapeHtml(item.channel || "")}</span><span>${escapeHtml(item.type === "playlist" ? "Playlist" : duration)}</span></div>
                     </div>
                 </a>
@@ -876,7 +992,7 @@
             const meta = [video.category, video.subject, duration || formatDate(video.createdAt)].filter(Boolean);
             return `<article class="video-card" data-card-id="${escapeHtml(video.id)}">
                 <a class="video-link" href="${escapeHtml(video.videoUrl || `/show/${encodeURIComponent(video.id)}`)}">
-                    <div class="thumb">${video.thumbnail ? `<img loading="lazy" src="${escapeHtml(video.thumbnail)}" alt="" onerror="this.remove()">` : ""}<span class="thumb-play">${icons.play}</span>${duration ? `<span class="thumb-duration">${escapeHtml(duration)}</span>` : ""}<button class="remove-video" data-remove="${escapeHtml(video.id)}" type="button" aria-label="Remove from your lists">${icons.remove}</button><button class="bookmark ${saved ? "saved" : ""}" data-bookmark="${escapeHtml(video.id)}" type="button" aria-label="${saved ? "Remove from watch later" : "Save for later"}">${icons.bookmark}</button></div>
+                    <div class="thumb">${video.thumbnail ? `<img loading="lazy" src="${escapeHtml(video.thumbnail)}" data-preview-url="${escapeHtml(video.previewUrl || "")}" alt="">` : ""}<span class="thumb-play">${icons.play}</span>${duration ? `<span class="thumb-duration">${escapeHtml(duration)}</span>` : ""}<button class="remove-video" data-remove="${escapeHtml(video.id)}" type="button" aria-label="Remove from your lists">${icons.remove}</button><button class="bookmark ${saved ? "saved" : ""}" data-bookmark="${escapeHtml(video.id)}" type="button" aria-label="${saved ? "Remove from watch later" : "Save for later"}">${icons.bookmark}</button></div>
                     <div class="card-body"><h3 class="card-title">${escapeHtml(video.title || video.fileName || "Untitled video")}</h3><div class="card-meta">${meta.map((item, index) => `${index ? '<span class="meta-dot"></span>' : ""}<span>${escapeHtml(item)}</span>`).join("") || "<span>Video</span>"}</div>
                     ${progress ? `<div class="progress-track"><div class="progress-fill" style="width:${progress}%"></div></div><div class="progress-copy"><span>${Math.round(progress)}% watched</span><span>Resume</span></div>` : done ? `<div class="progress-copy"><span>${icons.check} Completed</span></div>` : `<span class="card-action">Watch now ↗</span>`}</div>
                 </a>
@@ -989,15 +1105,18 @@
                     channel: video.channel,
                     thumbnail: video.thumbnail,
                     duration: video.duration,
-                    itemCount: video.itemCount
+                    itemCount: video.itemCount,
+                    viewCount: video.viewCount,
+                    publishedAt: video.publishedAt
                 };
                 const saved = state.youtubeLater.some((entry) => youtubeMediaKey(entry) === youtubeMediaKey(item));
                 return `
-                <article class="study-result" data-youtube-type="${item.type}" data-youtube-id="${escapeHtml(item.id)}" data-youtube-duration="${Number(item.duration) || 0}" data-youtube-item-count="${Number(item.itemCount) || 0}">
+                <article class="study-result" data-youtube-type="${item.type}" data-youtube-id="${escapeHtml(item.id)}" data-youtube-duration="${Number(item.duration) || 0}" data-youtube-item-count="${Number(item.itemCount) || 0}" data-youtube-view-count="${Number(item.viewCount) || 0}" data-youtube-published-at="${escapeHtml(item.publishedAt || "")}">
                     <a class="study-result-link" href="${escapeHtml(youtubeMediaUrl(item))}" target="_blank" rel="noopener noreferrer">
                     <img loading="lazy" src="${escapeHtml(video.thumbnail || "")}" alt="">
                     <div class="study-result-copy">
                         <h2 class="study-result-title">${escapeHtml(video.title)}</h2>
+                        ${youtubeStatsMarkup(item)}
                         <div class="study-result-meta"><span class="study-result-channel">${escapeHtml(video.channel)}</span><span>${playlist ? `${Number(video.itemCount) || 0} videos · Playlist` : escapeHtml(formatDuration(video.duration))}</span></div>
                     </div>
                     </a>
@@ -1199,7 +1318,9 @@
                             channel: card.querySelector(".study-result-channel").textContent,
                             thumbnail: image?.src || "",
                             duration: Number(card.dataset.youtubeDuration) || 0,
-                            itemCount: Number(card.dataset.youtubeItemCount) || 0
+                            itemCount: Number(card.dataset.youtubeItemCount) || 0,
+                            viewCount: Number(card.dataset.youtubeViewCount) || 0,
+                            publishedAt: card.dataset.youtubePublishedAt || ""
                         });
                     }
                 }

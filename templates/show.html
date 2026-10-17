@@ -2570,7 +2570,7 @@
         .progress-buffer {
             background: linear-gradient(
                 to right,
-                #9a7abc 0 var(--played, 0%),
+                #80629b 0 var(--played, 0%),
                 #c4a8dd var(--played, 0%) var(--buffered, 0%),
                 rgba(255, 255, 255, .32) var(--buffered, 0%) 100%
             );
@@ -2770,6 +2770,20 @@
             .page-intro { column-gap: 24px; }
             .player-card { min-height: 250px; }
             #content { padding: 24px; }
+        }
+        @media (max-width: 900px) {
+            .progress-track { height: 24px; }
+            .progress-bar { height: 24px; }
+            .progress-buffer,
+            .progress-bar::-webkit-slider-runnable-track,
+            .progress-bar::-moz-range-track {
+                height: 12px;
+                border-radius: 99px;
+            }
+            .progress-bar::-webkit-slider-runnable-track,
+            .progress-bar::-moz-range-track {
+                background: transparent;
+            }
         }
         @media (max-width: 650px) {
             .topbar { height: 64px; padding: 0 15px; }
@@ -3047,7 +3061,7 @@
                     <button class="control-btn" id="mute-toggle" aria-label="Mute or unmute">🔊</button>
                     <input class="volume-bar" id="volume-bar" type="range" min="0" max="1" step="0.05" value="0.9" aria-label="Volume">
                     <span class="control-spacer"></span>
-                    <button class="control-btn speed-btn" id="speed-toggle" aria-label="Playback speed">1x</button>
+                    <button class="control-btn speed-btn" id="speed-toggle" aria-label="Playback speed (S)" title="Playback speed (S)">1x</button>
                     <button class="control-btn" id="fullscreen-toggle" aria-label="Fullscreen">⛶</button>
                 </div>
             </div>
@@ -4052,9 +4066,16 @@
             }
         }
 
+        function cyclePlaybackSpeed() {
+            if (!activeMedia) return;
+            speedIndex = (speedIndex + 1) % speeds.length;
+            activeMedia.playbackRate = speeds[speedIndex];
+            speedToggle.textContent = `${speeds[speedIndex]}x`;
+        }
+
         document.addEventListener("keydown", (event) => {
             revealPlayerControls();
-            if (!activeMedia || ![" ", "Spacebar", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "f", "F"].includes(event.key)) return;
+            if (!activeMedia || ![" ", "Spacebar", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "f", "F", "s", "S"].includes(event.key)) return;
 
             const target = event.target;
             const isTextEntry = target instanceof HTMLTextAreaElement
@@ -4062,6 +4083,7 @@
                 || (target instanceof HTMLInputElement && target.type !== "range")
                 || target.isContentEditable;
             if (isTextEntry) return;
+            if ((event.ctrlKey || event.metaKey || event.altKey) && (event.key === "s" || event.key === "S")) return;
 
             event.preventDefault();
             if (event.key === " " || event.key === "Spacebar") {
@@ -4080,6 +4102,10 @@
             }
             if (event.key === "f" || event.key === "F") {
                 toggleFullscreen();
+                return;
+            }
+            if (event.key === "s" || event.key === "S") {
+                if (!event.repeat) cyclePlaybackSpeed();
                 return;
             }
             if (event.key === "ArrowRight") seekBy(10);
@@ -4169,10 +4195,7 @@
             updatePlayerUi();
         };
         speedToggle.onclick = () => {
-            if (!activeMedia) return;
-            speedIndex = (speedIndex + 1) % speeds.length;
-            activeMedia.playbackRate = speeds[speedIndex];
-            speedToggle.textContent = `${speeds[speedIndex]}x`;
+            cyclePlaybackSpeed();
         };
         streamModeToggle.onclick = (event) => {
             event.stopPropagation();

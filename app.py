@@ -964,6 +964,17 @@ async def youtube_video_page(video_id: str):
         status_code=307,
     )
 
+@app.get("/youtube/{video_id}", response_class=HTMLResponse)
+async def youtube_player_page(request: Request, video_id: str):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
+        raise HTTPException(status_code=404, detail="Invalid YouTube video.")
+    title = request.query_params.get("title", "").strip()[:200] or "YouTube video"
+    return templates.TemplateResponse(
+        request=request,
+        name="youtube.html",
+        context={"request": request, "video_id": video_id, "video_title": title},
+    )
+
 @app.get("/health")
 async def health_check():
     """JSON health endpoint for uptime monitors and deployment checks."""
@@ -1141,7 +1152,7 @@ async def search_youtube_videos(
                 _youtube_api_get,
                 "videos",
                 {
-                    "part": "contentDetails,snippet,liveStreamingDetails",
+                    "part": "contentDetails,snippet,statistics,liveStreamingDetails",
                     "id": ",".join(video_id for video_id, _ in candidates),
                     "maxResults": len(candidates),
                 },
@@ -1199,6 +1210,8 @@ async def search_youtube_videos(
             "channel": snippet.get("channelTitle", ""),
             "thumbnail": thumbnail,
             "duration": duration,
+            "viewCount": video.get("statistics", {}).get("viewCount"),
+            "publishedAt": video_snippet.get("publishedAt"),
         })
 
     playlist_detail_by_id = {
@@ -1273,6 +1286,9 @@ async def _catalog_item(link, main_bot, recent_cutoff, semaphore):
             "title": _catalog_title(file_name),
             "fileName": file_name,
             "thumbnail": f"/thumbnail/{quote(unique_id)}",
+            "previewUrl": (
+                f"/dl/{message_id}/{quote(file_name, safe='')}" if is_video else None
+            ),
             "videoUrl": f"/show/{quote(unique_id)}",
             "duration": getattr(media, "duration", None),
             "category": _catalog_category(file_name, mime_type),
@@ -1599,7 +1615,13 @@ async def stream_media(r:Request,mid:int,fname:str,download:bool=False):
             f"{disposition}; filename=\"{fallback_name}\"; "
             f"filename*=UTF-8''{quote(file_name, safe='')}"
         )
-        hdrs={"Content-Type":m.mime_type or "application/octet-stream","Accept-Ranges":"bytes","Cache-Control":"private, no-store, max-age=0","Pragma":"no-cache","Content-Disposition":content_disposition,"Content-Length":str(rl),"X-Content-Type-Options":"nosniff"}
+        inferred_mime_type, _ = mimetypes.guess_type(file_name)
+        content_type = (
+            inferred_mime_type
+            if m.mime_type in (None, "application/octet-stream") and inferred_mime_type
+            else m.mime_type or "application/octet-stream"
+        )
+        hdrs={"Content-Type":content_type,"Accept-Ranges":"bytes","Cache-Control":"private, no-store, max-age=0","Pragma":"no-cache","Content-Disposition":content_disposition,"Content-Length":str(rl),"X-Content-Type-Options":"nosniff"}
         if rh:hdrs["Content-Range"]=f"bytes {fb}-{ub}/{fsize}"
         return StreamingResponse(body,status_code=sc,headers=hdrs)
     except HTTPException:

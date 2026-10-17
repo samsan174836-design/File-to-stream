@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#21172b">
+    <title>{{ video_title }} · Karva Bhaiya</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            color: #f5effb;
+            background: #17121d;
+        }
+        * { box-sizing: border-box; }
+        body {
+            min-width: 320px;
+            min-height: 100vh;
+            margin: 0;
+            background: radial-gradient(ellipse at 50% -20%, #49385a 0, #211a29 38%, #17121d 78%);
+        }
+        a { color: inherit; }
+        button, input { font: inherit; }
+        .page { width: min(100% - 36px, 1040px); margin: 0 auto; padding: 32px 0 56px; }
+        .back-link { display: inline-block; margin-bottom: 22px; color: #d7c5e9; font-size: 14px; text-decoration: none; }
+        .back-link:hover { color: #fff; }
+        h1 { margin: 0 0 22px; font-size: clamp(21px, 4vw, 32px); line-height: 1.25; overflow-wrap: anywhere; }
+        .player-shell {
+            overflow: hidden;
+            border: 1px solid rgba(224, 205, 242, .2);
+            border-radius: 18px;
+            background: #0b090e;
+            box-shadow: 0 24px 70px rgba(0, 0, 0, .42);
+        }
+        .video-frame { position: relative; width: 100%; min-height: 200px; aspect-ratio: 16 / 9; background: #08070a; }
+        #youtube-player { position: absolute; inset: 0; width: 100%; height: 100%; }
+        .player-message {
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+            display: grid;
+            place-content: center;
+            gap: 12px;
+            padding: 24px;
+            color: #eee5f7;
+            background: rgba(11, 9, 14, .96);
+            text-align: center;
+        }
+        .player-message[hidden] { display: none; }
+        .player-message p { max-width: 540px; margin: 0 auto; color: #c5b8d2; line-height: 1.6; }
+        .controls { display: grid; gap: 8px; padding: 14px 16px 12px; }
+        .progress-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; }
+        .time { min-width: 42px; color: #d7cbe2; font-size: 12px; font-variant-numeric: tabular-nums; }
+        input[type="range"] { width: 100%; accent-color: #bd9ce0; cursor: pointer; }
+        #progress { height: 18px; margin: 0; }
+        .button-row { display: flex; align-items: center; gap: 9px; }
+        .control {
+            min-width: 42px;
+            min-height: 38px;
+            padding: 0 10px;
+            border: 1px solid rgba(224, 205, 242, .22);
+            border-radius: 9px;
+            color: #f5effb;
+            background: rgba(240, 231, 248, .1);
+            cursor: pointer;
+        }
+        .control:hover:not(:disabled) { background: rgba(174, 145, 209, .3); }
+        .control:disabled { cursor: not-allowed; opacity: .5; }
+        .spacer { flex: 1; }
+        .shortcuts { margin: 3px 0 0; color: #a99bb6; font-size: 12px; line-height: 1.6; }
+        .external-link {
+            display: inline-flex;
+            min-height: 40px;
+            align-items: center;
+            margin-top: 18px;
+            padding: 0 14px;
+            border: 1px solid rgba(224, 205, 242, .24);
+            border-radius: 10px;
+            color: #e8d9f6;
+            background: rgba(240, 231, 248, .08);
+            text-decoration: none;
+        }
+        .external-link:hover { background: rgba(174, 145, 209, .2); }
+        @media (max-width: 520px) {
+            .page { width: min(100% - 24px, 1040px); padding-top: 20px; }
+            .player-shell { border-radius: 12px; }
+            .controls { padding: 10px; }
+            .button-row { gap: 5px; }
+            .control { min-width: 37px; min-height: 36px; padding: 0 7px; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { scroll-behavior: auto !important; }
+        }
+    </style>
+</head>
+<body>
+    <main class="page">
+        <a class="back-link" href="/home#study">← Back to YouTube search</a>
+        <h1>{{ video_title }}</h1>
+        <section class="player-shell" aria-label="YouTube video player">
+            <div class="video-frame">
+                <div id="youtube-player"></div>
+                <div class="player-message" id="player-message" role="status" aria-live="polite">
+                    <p id="message-copy">Loading YouTube player…</p>
+                    <a class="external-link" id="fallback-link" href="https://www.yout-ube.com/watch?v={{ video_id }}" target="_blank" rel="noopener noreferrer" hidden>Open on YouTube</a>
+                </div>
+            </div>
+            <div class="controls" aria-label="Playback controls">
+                <div class="progress-row">
+                    <span class="time" id="current-time">0:00</span>
+                    <input id="progress" type="range" min="0" max="1000" value="0" aria-label="Video progress" disabled>
+                    <span class="time" id="duration">0:00</span>
+                </div>
+                <div class="button-row">
+                    <button class="control" id="play-toggle" type="button" aria-label="Play or pause" disabled>▶</button>
+                    <button class="control" id="backward" type="button" aria-label="Back 10 seconds" disabled>−10s</button>
+                    <button class="control" id="forward" type="button" aria-label="Forward 10 seconds" disabled>+10s</button>
+                    <button class="control" id="mute-toggle" type="button" aria-label="Mute or unmute" disabled>Mute</button>
+                    <span class="spacer"></span>
+                    <button class="control" id="speed-toggle" type="button" aria-label="Playback speed (S)" title="Playback speed (S)" disabled>1×</button>
+                    <button class="control" id="fullscreen-toggle" type="button" aria-label="Fullscreen">⛶</button>
+                </div>
+            </div>
+        </section>
+        <p class="shortcuts">Shortcuts: <strong>Space/K</strong> play or pause · <strong>←/→</strong> seek 10s · <strong>↑/↓</strong> volume · <strong>M</strong> mute · <strong>S</strong> speed · <strong>F</strong> fullscreen. If the YouTube frame is focused, use its built-in shortcuts; browser security keeps keys typed inside the frame separate from this page.</p>
+        <a class="external-link" href="https://www.yout-ube.com/watch?v={{ video_id }}" target="_blank" rel="noopener noreferrer">Open video on YouTube</a>
+    </main>
+    <script>
+        const videoId = {{ video_id | tojson }};
+        const playerMessage = document.getElementById("player-message");
+        const messageCopy = document.getElementById("message-copy");
+        const fallbackLink = document.getElementById("fallback-link");
+        const progress = document.getElementById("progress");
+        const currentTimeLabel = document.getElementById("current-time");
+        const durationLabel = document.getElementById("duration");
+        const playToggle = document.getElementById("play-toggle");
+        const muteToggle = document.getElementById("mute-toggle");
+        const speedToggle = document.getElementById("speed-toggle");
+        let player;
+        let availableSpeeds = [1];
+        let currentSpeedIndex = 0;
+        let isSeeking = false;
+        let statusTimer;
+
+        function formatTime(value) {
+            if (!Number.isFinite(value) || value < 0) return "0:00";
+            const seconds = Math.floor(value);
+            const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            const remainder = String(seconds % 60).padStart(2, "0");
+            return hours ? `${hours}:${String(minutes).padStart(2, "0")}:${remainder}` : `${minutes}:${remainder}`;
+        }
+
+        function showMessage(message, showFallback = false) {
+            messageCopy.textContent = message;
+            fallbackLink.hidden = !showFallback;
+            playerMessage.hidden = false;
+        }
+
+        function enableControls() {
+            document.querySelectorAll(".controls button, #progress").forEach((control) => {
+                control.disabled = false;
+            });
+            availableSpeeds = player.getAvailablePlaybackRates().filter((rate) => rate > 0);
+            if (!availableSpeeds.length) availableSpeeds = [1];
+            currentSpeedIndex = Math.max(0, availableSpeeds.indexOf(player.getPlaybackRate()));
+            updateSpeedLabel();
+            playerMessage.hidden = true;
+            statusTimer = window.setInterval(updatePlayerUi, 500);
+            updatePlayerUi();
+        }
+
+        function updateSpeedLabel() {
+            speedToggle.textContent = `${availableSpeeds[currentSpeedIndex]}×`;
+            speedToggle.disabled = availableSpeeds.length < 2;
+        }
+
+        function updatePlayerUi() {
+            if (!player || typeof player.getDuration !== "function") return;
+            const total = player.getDuration();
+            const current = player.getCurrentTime();
+            if (Number.isFinite(total) && total > 0) {
+                durationLabel.textContent = formatTime(total);
+                if (!isSeeking) progress.value = String(Math.round(Math.min(1, current / total) * 1000));
+            }
+            currentTimeLabel.textContent = formatTime(current);
+            muteToggle.textContent = player.isMuted() ? "Unmute" : "Mute";
+            const activeSpeedIndex = availableSpeeds.indexOf(player.getPlaybackRate());
+            if (activeSpeedIndex >= 0 && activeSpeedIndex !== currentSpeedIndex) {
+                currentSpeedIndex = activeSpeedIndex;
+                updateSpeedLabel();
+            }
+            const state = player.getPlayerState();
+            playToggle.textContent = state === YT.PlayerState.PLAYING ? "Ⅱ" : "▶";
+            if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.PAUSED) {
+                playerMessage.hidden = true;
+            }
+        }
+
+        function togglePlayback() {
+            if (!player) return;
+            if (player.getPlayerState() === YT.PlayerState.PLAYING) player.pauseVideo();
+            else player.playVideo();
+        }
+
+        function seekBy(seconds) {
+            if (!player) return;
+            const total = player.getDuration();
+            const nextTime = Math.max(0, Math.min(total, player.getCurrentTime() + seconds));
+            player.seekTo(nextTime, true);
+            updatePlayerUi();
+        }
+
+        function cycleSpeed() {
+            if (!player || availableSpeeds.length < 2) return;
+            currentSpeedIndex = (currentSpeedIndex + 1) % availableSpeeds.length;
+            player.setPlaybackRate(availableSpeeds[currentSpeedIndex]);
+            updateSpeedLabel();
+        }
+
+        window.onYouTubeIframeAPIReady = () => {
+            player = new YT.Player("youtube-player", {
+                videoId,
+                playerVars: {
+                    autoplay: 0,
+                    controls: 1,
+                    enablejsapi: 1,
+                    fs: 1,
+                    playsinline: 1,
+                    rel: 0,
+                    origin: window.location.origin
+                },
+                events: {
+                    onReady: enableControls,
+                    onStateChange: updatePlayerUi,
+                    onError: (event) => {
+                        const message = event.data === 101 || event.data === 150
+                            ? "This video owner does not allow playback on other websites."
+                            : "The YouTube video could not be played here.";
+                        showMessage(`${message} You can still open it directly on YouTube.`, true);
+                    }
+                }
+            });
+        };
+
+        playToggle.addEventListener("click", togglePlayback);
+        document.getElementById("backward").addEventListener("click", () => seekBy(-10));
+        document.getElementById("forward").addEventListener("click", () => seekBy(10));
+        muteToggle.addEventListener("click", () => {
+            if (!player) return;
+            if (player.isMuted()) player.unMute();
+            else player.mute();
+            updatePlayerUi();
+        });
+        speedToggle.addEventListener("click", cycleSpeed);
+        document.getElementById("fullscreen-toggle").addEventListener("click", async () => {
+            const frame = document.querySelector(".video-frame");
+            if (document.fullscreenElement) await document.exitFullscreen();
+            else if (frame.requestFullscreen) await frame.requestFullscreen();
+        });
+        progress.addEventListener("input", () => {
+            isSeeking = true;
+            const total = player ? player.getDuration() : 0;
+            currentTimeLabel.textContent = formatTime(total * Number(progress.value) / 1000);
+        });
+        progress.addEventListener("change", () => {
+            if (player) player.seekTo(player.getDuration() * Number(progress.value) / 1000, true);
+            isSeeking = false;
+            updatePlayerUi();
+        });
+        document.addEventListener("keydown", (event) => {
+            if (!player) return;
+            const target = event.target;
+            if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement
+                || target instanceof HTMLSelectElement || target.isContentEditable) return;
+            if (event.key === " " && target.closest("button, a")) return;
+            if ((event.ctrlKey || event.metaKey || event.altKey) && /^[sSfF]$/.test(event.key)) return;
+            const key = event.key.toLowerCase();
+            if (![" ", "k", "arrowleft", "arrowright", "arrowup", "arrowdown", "m", "s", "f"].includes(key)) return;
+            if (event.repeat) return;
+            event.preventDefault();
+            if (key === " " || key === "k") togglePlayback();
+            else if (key === "arrowleft") seekBy(-10);
+            else if (key === "arrowright") seekBy(10);
+            else if (key === "arrowup") player.setVolume(Math.min(100, player.getVolume() + 5));
+            else if (key === "arrowdown") player.setVolume(Math.max(0, player.getVolume() - 5));
+            else if (key === "m") {
+                if (player.isMuted()) player.unMute();
+                else player.mute();
+            } else if (key === "s") cycleSpeed();
+            else if (key === "f") {
+                const frame = document.querySelector(".video-frame");
+                if (document.fullscreenElement) void document.exitFullscreen();
+                else if (frame.requestFullscreen) void frame.requestFullscreen();
+            }
+            updatePlayerUi();
+        });
+
+        const apiScript = document.createElement("script");
+        apiScript.src = "https://www.youtube.com/iframe_api";
+        apiScript.onerror = () => showMessage("The YouTube player could not be loaded. Check your connection and try opening the video on YouTube.", true);
+        document.head.append(apiScript);
+        window.addEventListener("beforeunload", () => window.clearInterval(statusTimer));
+    </script>
+</body>
+</html>
