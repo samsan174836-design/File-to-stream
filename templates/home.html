@@ -1323,7 +1323,7 @@
                     if (featuredPreviewVideoId !== video.id) return;
                     preview.play().then(() => {
                         preview.classList.add("is-playing");
-                        featuredPreviewTimer = window.setTimeout(() => stopFeaturedPreview(video.id), 10000);
+                        featuredPreviewTimer = window.setTimeout(() => stopFeaturedPreview(video.id), 15000);
                     }).catch(() => stopFeaturedPreview(video.id));
                 };
                 if (startAt > 0.05) {
@@ -1367,7 +1367,8 @@
             if (!isSameVideo || image.hidden || !image.getAttribute("src")) {
                 void restoreFeaturedThumbnail(image, video);
             }
-            startFeaturedPreview(video);
+            if (activeView === "home") startFeaturedPreview(video);
+            else stopFeaturedPreview();
             document.getElementById("continue-feature-title").textContent =
                 formatVideoTitle(video.title || video.fileName);
             document.getElementById("continue-feature-watched").textContent = `${Math.round(progress)}% watched`;
@@ -1568,6 +1569,12 @@
             document.querySelectorAll("[data-view]").forEach((item) => item.classList.toggle("active", item.dataset.view === activeView));
             if (updateHash && window.location.pathname !== viewPaths[activeView]) history.pushState(null, "", viewPaths[activeView]);
             if (activeView === "search") document.getElementById("search-input").focus();
+            if (activeView === "home") {
+                const continueVideo = sortByRecent(videos.filter((video) => progressFor(video) > 0))[0];
+                if (continueVideo) startFeaturedPreview(continueVideo);
+            } else {
+                stopFeaturedPreview();
+            }
             window.scrollTo({ top: 0, behavior: "smooth" });
         }
         function bindEvents() {

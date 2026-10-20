@@ -2,6 +2,15 @@
 (function () {
   if (window.__aurora) return; window.__aurora = true;
   var reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var scrollResetTimer;
+
+  window.addEventListener("scroll", function () {
+    document.body.classList.add("is-scrolling");
+    clearTimeout(scrollResetTimer);
+    scrollResetTimer = window.setTimeout(function () {
+      document.body.classList.remove("is-scrolling");
+    }, 180);
+  }, { passive: true });
 
   // Starfield
   if (!reduce && !document.querySelector(".player-card, .player-shell")) {
