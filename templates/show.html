@@ -3045,7 +3045,7 @@
             }
         }
     </style>
-    <link rel="stylesheet" href="/static/aurora.css?v=2">
+    <link rel="stylesheet" href="/static/aurora.css?v=3">
 </head>
 <body class="player-page">
     <header class="topbar">
@@ -3652,6 +3652,7 @@
                 : 0;
             progressBuffer.style.setProperty("--played", `${playedPercentage}%`);
             progressBuffer.style.setProperty("--buffered", `${bufferedPercentage}%`);
+            progressBar.style.setProperty("--played", `${playedPercentage}%`);
             const volumeValue = activeMedia.muted ? 0 : activeMedia.volume;
             volumeBar.value = String(volumeValue);
             volumeBar.style.setProperty("--volume-level", `${volumeValue * 100}%`);
