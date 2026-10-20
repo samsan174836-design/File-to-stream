@@ -657,7 +657,7 @@
             gap: 8px;
         }
     </style>
-    <link rel="stylesheet" href="/static/aurora.css?v=1">
+    <link rel="stylesheet" href="/static/aurora.css?v=2">
 </head>
 <body>
     <div class="app-shell">
@@ -1053,6 +1053,15 @@
                 const thumbnail = await generateVideoThumbnail(previewUrl);
                 if (!image.isConnected || image.dataset.videoId !== videoId) return;
                 if (!thumbnail) {
+                    const rounds = Number(image.dataset.thumbRounds || 0);
+                    if (rounds < 3) {
+                        image.dataset.thumbRounds = String(rounds + 1);
+                        delete image.dataset.thumbnailRestoring;
+                        generatedThumbnailCache.delete(previewUrl);
+                        window.setTimeout(() => void restoreCardThumbnail(image, videoId, previewUrl, thumbnailUrl), 2500 * (rounds + 1));
+                        return;
+                    }
+                    image.closest(".thumb")?.classList.add("thumb-failed");
                     image.remove();
                     image.closest(".visual-screen")?.classList.remove("has-thumbnail");
                     return;
@@ -1080,9 +1089,25 @@
             if (!(image instanceof HTMLImageElement) || !image.matches(".thumb img, .visual-thumbnail")) return;
             const previewUrl = image.dataset.previewUrl;
             const videoId = image.dataset.videoId;
+            const tries = Number(image.dataset.thumbRetry || 0);
+            const base = image.dataset.thumbnailUrl;
+            if (base && image.dataset.thumbnailRequestFailed !== "true" && tries < 4) {
+                image.dataset.thumbRetry = String(tries + 1);
+                window.setTimeout(() => {
+                    if (!image.isConnected) return;
+                    const u = new URL(base, window.location.href);
+                    u.searchParams.set("retry", String(tries + 1));
+                    image.src = u.href;
+                }, 700 * Math.pow(2, tries));
+                return;
+            }
             image.dataset.thumbnailRequestFailed = "true";
             image.closest(".visual-screen")?.classList.remove("has-thumbnail");
             void restoreCardThumbnail(image, videoId, previewUrl, image.dataset.thumbnailUrl);
+        }, true);
+        document.addEventListener("load", (event) => {
+            const image = event.target;
+            if (image instanceof HTMLImageElement && image.matches(".thumb img, .visual-thumbnail")) image.classList.add("is-loaded");
         }, true);
         function youtubeMediaUrl(item) {
             return item.type === "playlist"
@@ -1614,6 +1639,6 @@
         bindEvents(); setView(activeView, false); renderAll(); loadCatalog();
     </script>
     <script src="/static/pwa-register.js" defer></script>
-    <script src="/static/aurora.js?v=1" defer></script>
+    <script src="/static/aurora.js?v=2" defer></script>
 </body>
 </html>
