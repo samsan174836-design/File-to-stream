@@ -352,3 +352,101 @@ body[data-theme="light"] .skeleton-thumb, body[data-theme="light"] .skeleton-lin
 input[type="range"].volume-bar, #volume-bar, .volume-bar input { accent-color: var(--g-gold) !important; }
 input[type="range"].volume-bar::-webkit-slider-runnable-track { background: linear-gradient(90deg, var(--g-gold), rgba(255,255,255,.2)) !important; height: 4px; border-radius: 4px; }
 input[type="range"].volume-bar::-webkit-slider-thumb { background: #fff6dc !important; border: 2px solid var(--g-gold) !important; }
+
+/* Keep playback scrolling light and controls close to native player chrome. */
+.player-page { background-attachment: scroll !important; }
+.player-page .topbar,
+.player-page .custom-controls {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+.player-page .custom-controls {
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  padding: 14px 16px calc(12px + env(safe-area-inset-bottom)) !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: linear-gradient(180deg, transparent, rgba(0,0,0,.78) 42%, rgba(0,0,0,.94)) !important;
+  box-shadow: none !important;
+}
+.player-page .controls-topline { margin: 0 0 4px !important; }
+.player-page .time-label {
+  padding: 0 !important;
+  border: 0 !important;
+  color: rgba(255,255,255,.88) !important;
+  background: transparent !important;
+}
+.player-page .control-row { justify-content: space-between; gap: 8px !important; }
+.player-page .control-btn {
+  width: 38px !important;
+  height: 38px !important;
+  padding: 8px !important;
+  border: 0 !important;
+  border-radius: 50% !important;
+  color: #fff !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+.player-page .control-btn:hover,
+.player-page .control-btn:focus-visible { background: rgba(255,255,255,.15) !important; }
+.player-page .control-btn svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+.player-page .big-play svg {
+  width: 28px;
+  height: 28px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+.player-page .big-play {
+  animation: none !important;
+  box-shadow: 0 12px 32px rgba(0,0,0,.38) !important;
+}
+.player-page #play-toggle {
+  width: 40px !important;
+  height: 40px !important;
+  color: #fff !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.player-page .skip-btn { display: inline-grid !important; }
+.player-page .skip-btn small {
+  top: 50% !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: 50% !important;
+  color: #fff !important;
+  font-size: 7px !important;
+  transform: translate(-50%, -50%);
+}
+.player-page .speed-btn {
+  width: 38px !important;
+  min-width: 38px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  color: #fff !important;
+  font-size: 12px !important;
+}
+.player-page .volume-bar { width: 56px; }
+.player-page .progress-track { height: 4px !important; }
+.player-page .progress-track:hover { height: 4px !important; }
+.player-page .progress-bar { touch-action: pan-y; }
+
+@media (max-width: 640px) {
+  .player-page .custom-controls { padding: 12px 10px calc(10px + env(safe-area-inset-bottom)) !important; }
+  .player-page .control-row { gap: 5px !important; }
+  .player-page .control-btn { width: 34px !important; height: 34px !important; padding: 7px !important; }
+  .player-page #play-toggle { width: 38px !important; height: 38px !important; }
+  .player-page .volume-bar { display: none; }
+}

@@ -4,7 +4,7 @@
   var reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   // Starfield
-  if (!reduce) {
+  if (!reduce && !document.querySelector(".player-card, .player-shell")) {
     var c = document.createElement("canvas"); c.id = "au-stars"; document.body.prepend(c);
     var x = c.getContext("2d"), stars = [], w, h, dpr = Math.min(window.devicePixelRatio || 1, 2);
     function size() {

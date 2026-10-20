@@ -3047,7 +3047,7 @@
     </style>
     <link rel="stylesheet" href="/static/aurora.css?v=2">
 </head>
-<body>
+<body class="player-page">
     <header class="topbar">
         <a class="brand" href="/" aria-label="Karva Bhaiya home">
             <span class="brand-mark">K</span>
@@ -3125,14 +3125,14 @@
                     <input class="progress-bar" id="progress-bar" type="range" min="0" max="1000" value="0" aria-label="Video progress">
                 </div>
                 <div class="control-row">
-                    <button class="control-btn" id="play-toggle" aria-label="Play or pause">▶</button>
-                    <button class="control-btn skip-btn" id="skip-back-toggle" type="button" aria-label="Back 10 seconds" title="Back 10 seconds"><span aria-hidden="true">↶</span><small>10</small></button>
-                    <button class="control-btn skip-btn" id="skip-forward-toggle" type="button" aria-label="Forward 10 seconds" title="Forward 10 seconds"><span aria-hidden="true">↷</span><small>10</small></button>
-                    <button class="control-btn" id="mute-toggle" aria-label="Mute or unmute">🔊</button>
+                    <button class="control-btn" id="play-toggle" aria-label="Play or pause"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg></button>
+                    <button class="control-btn skip-btn" id="skip-back-toggle" type="button" aria-label="Back 10 seconds" title="Back 10 seconds"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 10l5-4v3c6 0 9 3 8 9"/></svg><small>10</small></button>
+                    <button class="control-btn skip-btn" id="skip-forward-toggle" type="button" aria-label="Forward 10 seconds" title="Forward 10 seconds"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 14 5-4-5-4v3c-6 0-9 3-8 9"/></svg><small>10</small></button>
+                    <button class="control-btn" id="mute-toggle" aria-label="Mute or unmute"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4zM15 9a5 5 0 0 1 0 6M18 6a9 9 0 0 1 0 12"/></svg></button>
                     <input class="volume-bar" id="volume-bar" type="range" min="0" max="1" step="0.05" value="0.9" aria-label="Volume">
                     <span class="control-spacer"></span>
                     <button class="control-btn speed-btn" id="speed-toggle" aria-label="Playback speed (S)" title="Playback speed (S)">1x</button>
-                    <button class="control-btn" id="fullscreen-toggle" aria-label="Fullscreen">⛶</button>
+                    <button class="control-btn" id="fullscreen-toggle" aria-label="Fullscreen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></button>
                 </div>
             </div>
             <div class="pomodoro-break-overlay" id="pomodoro-break-overlay" hidden>
@@ -3584,6 +3584,19 @@
                 : `${minutes}:${remaining}`;
         }
 
+        const controlIcons = {
+            play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z" fill="currentColor" stroke="none"/></svg>',
+            pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg>',
+            volume: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4zM15 9a5 5 0 0 1 0 6M18 6a9 9 0 0 1 0 12"/></svg>',
+            muted: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4zM16 9l5 6m0-6-5 6"/></svg>',
+            fullscreen: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>',
+            exitFullscreen: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3v3a2 2 0 0 1-2 2H3M16 3v3a2 2 0 0 0 2 2h3M21 16h-3a2 2 0 0 0-2 2v3M3 16h3a2 2 0 0 1 2 2v3"/></svg>'
+        };
+
+        function setControlIcon(button, iconName) {
+            button.innerHTML = controlIcons[iconName];
+        }
+
         function showSeekFeedback(seconds) {
             const direction = seconds >= 0 ? 1 : -1;
             if (direction !== seekFeedbackDirection) seekFeedbackTotal = 0;
@@ -3653,11 +3666,13 @@
                     revealPlayerControls(2000);
                 }
             }
-            playToggle.textContent = playing ? "❚❚" : "▶";
-            bigPlay.textContent = playing ? "❚❚" : "▶";
+            setControlIcon(playToggle, playing ? "pause" : "play");
+            setControlIcon(bigPlay, playing ? "pause" : "play");
             bigPlay.setAttribute("aria-label", playing ? "Pause video" : "Play video");
             playerCard.classList.toggle("is-playing", playing);
-            muteToggle.textContent = activeMedia.muted || activeMedia.volume === 0 ? "🔇" : "🔊";
+            const isMuted = activeMedia.muted || activeMedia.volume === 0;
+            setControlIcon(muteToggle, isMuted ? "muted" : "volume");
+            muteToggle.setAttribute("aria-label", isMuted ? "Unmute" : "Mute");
             updateStreamModeUi();
              updateMusicModeUi();
         }
@@ -4287,6 +4302,9 @@
          };
         fullscreenToggle.onclick = toggleFullscreen;
         document.addEventListener("fullscreenchange", () => {
+            const isFullscreen = Boolean(document.fullscreenElement);
+            setControlIcon(fullscreenToggle, isFullscreen ? "exitFullscreen" : "fullscreen");
+            fullscreenToggle.setAttribute("aria-label", isFullscreen ? "Exit fullscreen" : "Fullscreen");
             revealPlayerControls();
         });
         restartPlayback.onclick = () => {
