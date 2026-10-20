@@ -1037,7 +1037,7 @@ def _youtube_api_get(endpoint: str, params: dict) -> dict:
 def _youtube_suggestions(query: str) -> list[str]:
     request = urllib.request.Request(
         "https://suggestqueries.google.com/complete/search?"
-        + urllib.parse.urlencode({"client": "firefox", "ds": "yt", "q": query}),
+        + urllib.parse.urlencode({"client": "firefox", "ds": "yt", "q": query, "gl": "IN", "hl": "hi"}),
         headers={"Accept": "application/json"},
     )
     with urllib.request.urlopen(request, timeout=5) as response:
@@ -1103,6 +1103,7 @@ async def search_youtube_videos(
         "q": query,
         "maxResults": 50,
         "safeSearch": "strict",
+        "regionCode": "IN",
     }
     video_search_params = {**search_params, "type": "video"}
     if page_token:

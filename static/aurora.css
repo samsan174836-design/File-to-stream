@@ -595,7 +595,7 @@ html body.player-page .stream-mode-toggle.is-live::before {
 }
 html body.player-page .player-card {
   border-color: #000 !important;
-  box-shadow: 0 28px 70px rgba(0,0,0,.42) !important;
+  box-shadow: 0 28px 70px rgba(0,0,0,.42), 0 0 24px rgba(242,182,50,.13) !important;
 }
 html body.player-page .player-card:fullscreen,
 html body.player-page .player-card:-webkit-full-screen {
