@@ -19,7 +19,7 @@
         x.clearRect(0, 0, w, h);
         for (var i = 0; i < stars.length; i++) {
           var s = stars[i]; s.t += .02; s.y -= s.s * dpr; if (s.y < 0) { s.y = h; s.x = Math.random() * w; }
-          x.globalAlpha = .35 + Math.sin(s.t) * .3; x.fillStyle = i % 3 ? "#cdd3ff" : "#8ff0ff";
+          x.globalAlpha = .35 + Math.sin(s.t) * .3; x.fillStyle = i % 3 ? "#ffe3a0" : "#f2b632";
           x.beginPath(); x.arc(s.x, s.y, s.r, 0, 6.28); x.fill();
         }
       }
@@ -28,7 +28,7 @@
   }
 
   // Scroll reveal (also for cards added later by JS)
-  var SEL = ".video-card, .study-result, .info-card, .section-heading, .player-card, .player-shell, .empty-state, .pomodoro-panel";
+  var SEL = ".video-card, .study-result, .info-card, .section-heading, .empty-state, .pomodoro-panel";
   var io = "IntersectionObserver" in window && !reduce ? new IntersectionObserver(function (es) {
     es.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add("au-in"); io.unobserve(e.target); } });
   }, { threshold: .08 }) : null;
