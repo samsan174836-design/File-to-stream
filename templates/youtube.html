@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#21172b">
+    <meta name="theme-color" content="#070812">
     <title>{{ video_title }} · Karva Bhaiya</title>
     <style>
         :root {
@@ -70,6 +70,7 @@
             *, *::before, *::after { scroll-behavior: auto !important; }
         }
     </style>
+    <link rel="stylesheet" href="/static/aurora.css?v=1">
 </head>
 <body>
     <main class="page">
@@ -195,5 +196,6 @@
         apiScript.onerror = () => showMessage("The YouTube player could not be loaded. Check your connection and try opening the video on YouTube.", true);
         document.head.append(apiScript);
     </script>
+    <script src="/static/aurora.js?v=1" defer></script>
 </body>
 </html>
