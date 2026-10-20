@@ -152,6 +152,31 @@
         .progress-fill { height: 100%; border-radius: inherit; background: var(--green-500); }
         .progress-copy { display: flex; justify-content: space-between; margin-top: 5px; color: var(--green-700); font-size: 10px; font-weight: 800; }
         .card-action { display: inline-flex; margin-top: 10px; color: var(--green-700); font-size: 11px; font-weight: 800; }
+        .schedule-class-btn { display: inline-flex; min-height: 32px; align-items: center; gap: 6px; margin: 9px 10px 11px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--green-800); background: var(--paper); font-size: 10px; font-weight: 800; cursor: pointer; }
+        .schedule-class-btn:hover { border-color: var(--green-500); color: var(--green-900); background: var(--green-50); }
+        .schedule-class-btn svg { width: 14px; height: 14px; }
+        .live-class-list { display: grid; gap: 12px; }
+        .live-class-tools { display: flex; align-items: center; gap: 10px; }
+        .live-class-reminders { min-height: 38px; padding: 0 12px; border: 1px solid var(--line); border-radius: 9px; color: var(--ink); background: var(--paper); font-size: 11px; font-weight: 750; cursor: pointer; }
+        .live-class-reminders:disabled { opacity: .7; cursor: default; }
+        .live-class-card { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); }
+        .live-class-copy { min-width: 0; }
+        .live-class-copy strong { display: block; overflow: hidden; color: var(--ink); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+        .live-class-copy span { display: block; margin-top: 5px; color: var(--muted); font-size: 11px; }
+        .live-class-state { display: inline-flex !important; width: fit-content; align-items: center; gap: 6px; color: var(--muted) !important; }
+        .live-class-state.is-live { color: #c7353e !important; font-weight: 800; }
+        .live-class-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
+        .live-class-actions button { min-height: 36px; padding: 0 11px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: var(--paper); font-size: 11px; font-weight: 750; cursor: pointer; }
+        .live-class-actions button[data-join-live] { border-color: transparent; color: var(--g-on-gold); background: var(--g-grad); }
+        .schedule-dialog { width: min(440px, calc(100% - 32px)); padding: 24px; border: 1px solid var(--line); border-radius: 16px; color: var(--ink); background: var(--paper); box-shadow: var(--shadow); }
+        .schedule-dialog::backdrop { background: rgba(0,0,0,.58); backdrop-filter: blur(3px); }
+        .schedule-dialog h2 { margin: 0 0 6px; color: var(--green-900); font-size: 22px; }
+        .schedule-dialog p { margin: 0 0 16px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+        .schedule-dialog label { display: grid; gap: 7px; color: var(--ink); font-size: 12px; font-weight: 750; }
+        .schedule-dialog input { width: 100%; min-height: 42px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: var(--canvas); font: inherit; }
+        .schedule-dialog-error { min-height: 18px; margin: 8px 0 !important; color: var(--danger) !important; }
+        .schedule-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+        .schedule-dialog-actions button { min-height: 38px; }
         .empty-state { display: grid; min-height: 150px; place-items: center; padding: 25px; border: 1px dashed #c7ddce; border-radius: 16px; color: var(--muted); background: rgba(255,255,255,.62); text-align: center; }
         .empty-state-icon { display: grid; width: 39px; height: 39px; place-items: center; margin: 0 auto 9px; border-radius: 12px; color: var(--green-800); background: var(--green-100); }
         .empty-state-icon svg { width: 19px; height: 19px; }
@@ -224,7 +249,7 @@
             .video-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; }
             .card-body { padding: 10px; }
             .card-title { font-size: 12px; }
-            .mobile-nav { position: fixed; right: 9px; bottom: 9px; left: 9px; z-index: 10; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 7px; border: 1px solid var(--line); border-radius: 17px; background: rgba(255,255,255,.94); box-shadow: 0 13px 35px rgba(26,73,47,.16); backdrop-filter: blur(16px); }
+            .mobile-nav { position: fixed; right: 9px; bottom: 9px; left: 9px; z-index: 10; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); padding: 7px; border: 1px solid var(--line); border-radius: 17px; background: rgba(255,255,255,.94); box-shadow: 0 13px 35px rgba(26,73,47,.16); backdrop-filter: blur(16px); }
             .mobile-nav .nav-item { display: grid; justify-items: center; gap: 3px; padding: 6px 2px; font-size: 9px; }
             .mobile-nav .nav-icon { width: 18px; height: 18px; }
             .page-title { align-items: start; flex-direction: column; }
@@ -682,6 +707,7 @@
             <nav class="nav-list" aria-label="Main navigation">
                 <button class="nav-item active" data-view="home"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m4 10 8-6 8 6v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-9Z"/><path d="M9 20v-6h6v6"/></svg></span>Home</button>
                 <button class="nav-item" data-view="all-lecture"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span>All Lectures</button>
+                <button class="nav-item" data-view="live-classes"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18M10 15l5 3-5 3z"/></svg></span>Live Classes</button>
                 <button class="nav-item" data-view="today"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 10h16"/></svg></span>Today Lecture</button>
                 <button class="nav-item" data-view="continue"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg></span>Continue</button>
                 <button class="nav-item" data-view="later"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M6 4h12v16l-6-3.5L6 20V4Z"/></svg></span>Later Lecture</button>
@@ -743,6 +769,7 @@
                 <section class="view" id="view-later" data-view-panel="later"><div class="page-title"><div><h1>Later Lecture</h1><p>Save any video here for your next watch.</p></div><span class="result-count" id="later-count"></span></div><div id="later-grid"></div></section>
                 <section class="view" id="view-today" data-view-panel="today"><div class="page-title"><div><h1>Today Lecture</h1><p>Videos sent to the bot in the last 24 hours.</p></div><span class="result-count" id="today-count"></span></div><div id="today-grid"></div></section>
                 <section class="view" id="view-all-lecture" data-view-panel="all-lecture"><div class="page-title"><div><h1>All Lecture</h1><p>All videos you have sent to the bot.</p></div><span class="result-count" id="all-lecture-count"></span></div><div id="all-lecture-grid"></div></section>
+                <section class="view" id="view-live-classes" data-view-panel="live-classes"><div class="page-title"><div><h1>Live Classes</h1><p>Schedule a lecture to stream it at a set time.</p></div><div class="live-class-tools"><button class="live-class-reminders" id="enable-live-reminders" type="button">Enable reminders</button><span class="result-count" id="live-classes-count"></span></div></div><div class="live-class-list" id="live-classes-list"></div></section>
                 <section class="view" id="view-search" data-view-panel="search"><div class="page-title"><div><h1>Search</h1><p>Find a title, subject, category, or filename.</p></div><span class="result-count" id="search-count"></span></div><div id="search-grid"></div></section>
                 <section class="view" id="view-study" data-view-panel="study">
                     <div class="page-title"><div><h1>YouTube</h1><p>Search videos and playlists, save them for later, and play videos on your own page.</p></div></div>
@@ -763,6 +790,7 @@
     <nav class="mobile-nav" aria-label="Mobile navigation">
         <button class="nav-item active" data-view="home"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m4 10 8-6 8 6v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-9Z"/><path d="M9 20v-6h6v6"/></svg></span>Home</button>
         <button class="nav-item" data-view="all-lecture"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span>All Lectures</button>
+        <button class="nav-item" data-view="live-classes"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18M10 15l5 3-5 3z"/></svg></span>Live Classes</button>
         <button class="nav-item" data-view="today"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 10h16"/></svg></span>Today Lecture</button>
         <button class="nav-item" data-view="continue"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg></span>Continue</button>
         <button class="nav-item" data-view="later"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M6 4h12v16l-6-3.5L6 20V4Z"/></svg></span>Later Lecture</button>
@@ -782,21 +810,40 @@
             </div>
         </form>
     </dialog>
+    <dialog class="schedule-dialog" id="schedule-dialog" aria-labelledby="schedule-dialog-title">
+        <form id="schedule-form" novalidate>
+            <h2 id="schedule-dialog-title">Schedule a live class</h2>
+            <p id="schedule-video-title"></p>
+            <label for="schedule-start">Start date and time
+                <input id="schedule-start" type="datetime-local" required>
+            </label>
+            <p class="schedule-dialog-error" id="schedule-error" role="alert"></p>
+            <div class="schedule-dialog-actions">
+                <button class="secondary-btn" id="schedule-cancel" type="button">Cancel</button>
+                <button class="primary-btn" type="submit">Schedule class</button>
+            </div>
+        </form>
+    </dialog>
     <div class="toast" id="toast" role="status"></div>
 
     <script>
         const appStateKey = "karva-bhaiya:library-state";
         const catalogCacheKey = "karva-bhaiya:catalog-cache";
+        const scheduleStorageKey = "karva-bhaiya:live-class-schedules";
+        const scheduleReminderStorageKey = "karva-bhaiya:live-class-reminders";
         const startupState = "{{ 'ready' if bot_ready else 'starting' }}";
         let videos = [];
         let authRequired = false;
         let recentLectureRefreshTimer = null;
         let featuredPreviewVideoId = "";
         let featuredPreviewTimer = null;
-        const viewPaths = { home: "/", continue: "/continue", completed: "/completed", later: "/later", today: "/today", "all-lecture": "/all-lecture", search: "/", study: "/" };
-        const pathViews = { "/": "home", "/home": "home", "/continue": "continue", "/completed": "completed", "/later": "later", "/today": "today", "/all-lecture": "all-lecture" };
+        const viewPaths = { home: "/", continue: "/continue", completed: "/completed", later: "/later", today: "/today", "all-lecture": "/all-lecture", "live-classes": "/live-classes", search: "/", study: "/" };
+        const pathViews = { "/": "home", "/home": "home", "/continue": "continue", "/completed": "completed", "/later": "later", "/today": "today", "/all-lecture": "all-lecture", "/live-classes": "live-classes" };
         let activeView = pathViews[window.location.pathname] || window.location.hash.slice(1) || "{{ initial_view|default('home') }}";
         let state = readState();
+        let scheduledClasses = readScheduledClasses();
+        let sentScheduleReminders = readScheduleReminders();
+        let selectedScheduleVideoId = "";
         const icons = {
             bookmark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4h12v16l-6-3.5L6 20V4Z"/></svg>',
             remove: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7l1-3h4l1 3"/></svg>',
@@ -830,8 +877,97 @@
                 };
             } catch { return empty; }
         }
+        function readScheduledClasses() {
+            try {
+                const saved = JSON.parse(localStorage.getItem(scheduleStorageKey) || "[]");
+                return Array.isArray(saved) ? saved.filter((item) =>
+                    item && typeof item.id === "string" && typeof item.videoId === "string"
+                    && Number.isFinite(Date.parse(item.startAt)) && Number(item.duration) > 0
+                ) : [];
+            } catch { return []; }
+        }
+        function readScheduleReminders() {
+            try {
+                const saved = JSON.parse(localStorage.getItem(scheduleReminderStorageKey) || "{}");
+                return saved && typeof saved === "object" && !Array.isArray(saved) ? saved : {};
+            } catch { return {}; }
+        }
         function writeState() {
             try { localStorage.setItem(appStateKey, JSON.stringify(state)); } catch {}
+        }
+        function saveScheduledClasses() {
+            try {
+                localStorage.setItem(scheduleStorageKey, JSON.stringify(scheduledClasses));
+            } catch {
+                showToast("This schedule could not be saved in this browser.");
+                return false;
+            }
+            renderLiveClasses();
+            return true;
+        }
+        function findScheduleConflict(startAt, durationSeconds) {
+            const requestedStart = startAt.getTime();
+            const requestedEnd = requestedStart + durationSeconds * 1000;
+            return scheduledClasses.find((item) => {
+                const existingStart = Date.parse(item.startAt);
+                const existingEnd = existingStart + Number(item.duration) * 1000;
+                return requestedStart < existingEnd && requestedEnd > existingStart;
+            });
+        }
+        function saveScheduleReminders() {
+            try {
+                localStorage.setItem(scheduleReminderStorageKey, JSON.stringify(sentScheduleReminders));
+            } catch {
+                // Reminder deduplication is best-effort when browser storage is full.
+            }
+        }
+        async function sendScheduleReminder(scheduledClass, phase) {
+            const key = `${scheduledClass.id}:${phase}`;
+            if (sentScheduleReminders[key]) return;
+            sentScheduleReminders[key] = Date.now();
+            saveScheduleReminders();
+            const startAt = Date.parse(scheduledClass.startAt);
+            const playerUrl = `/show/${encodeURIComponent(scheduledClass.videoId)}?${new URLSearchParams({
+                scheduled_start: String(startAt),
+                scheduled_duration: String(scheduledClass.duration),
+            })}`;
+            const title = phase === "starting" ? "Live class is starting" : "Live class in 5 minutes";
+            const options = {
+                body: formatVideoTitle(scheduledClass.title),
+                tag: key,
+                icon: "/static/icons/app-icon-192.png",
+                data: { url: phase === "starting" ? playerUrl : "/live-classes" },
+            };
+            if ("Notification" in window && Notification.permission === "granted") {
+                try {
+                    const registration = "serviceWorker" in navigator
+                        ? await navigator.serviceWorker.ready
+                        : null;
+                    if (registration) {
+                        await registration.showNotification(title, options);
+                    } else {
+                        const notification = new Notification(title, options);
+                        notification.onclick = () => window.location.assign(options.data.url);
+                    }
+                    return;
+                } catch (error) {
+                    console.warn("A live class notification could not be shown.", error);
+                }
+            }
+            if (!document.hidden) showToast(`${title}: ${formatVideoTitle(scheduledClass.title)}`);
+        }
+        function checkScheduleReminders() {
+            const now = Date.now();
+            scheduledClasses.forEach((scheduledClass) => {
+                const startsAt = Date.parse(scheduledClass.startAt);
+                const endsAt = startsAt + Number(scheduledClass.duration) * 1000;
+                if (now >= endsAt) return;
+                if (now >= startsAt) {
+                    void sendScheduleReminder(scheduledClass, "starting");
+                } else if (startsAt - now <= 5 * 60 * 1000) {
+                    void sendScheduleReminder(scheduledClass, "soon");
+                }
+            });
         }
         function setText(id, text) { const node = document.getElementById(id); if (node) node.textContent = text || ""; }
         function formatDuration(seconds) {
@@ -1212,6 +1348,7 @@
                     <div class="card-body"><h3 class="card-title">${escapeHtml(formatVideoTitle(video.title || video.fileName))}</h3><div class="card-meta">${meta.map((item, index) => `${index ? '<span class="meta-dot"></span>' : ""}<span>${escapeHtml(item)}</span>`).join("") || "<span>Video</span>"}</div>
                     ${progress ? `<div class="progress-track"><div class="progress-fill" style="width:${progress}%"></div></div><div class="progress-copy"><span>${Math.round(progress)}% watched</span><span>Resume</span></div>` : done ? `<div class="progress-copy"><span>${icons.check} Completed</span></div>` : `<span class="card-action">Watch now ↗</span>`}</div>
                 </a>
+                ${video.isVideo ? `<button class="schedule-class-btn" type="button" data-schedule-video="${escapeHtml(video.id)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18M12 13v5M9.5 15.5h5"/></svg>Schedule</button>` : ""}
             </article>`;
         }
         function emptyMarkup(title, message, icon = "clock") {
@@ -1252,6 +1389,64 @@
         function renderGrid(targetId, list, emptyTitle, emptyMessage, icon) {
             const target = document.getElementById(targetId); if (!target) return;
             target.innerHTML = list.length ? `<div class="video-grid">${list.map(cardMarkup).join("")}</div>` : emptyMarkup(emptyTitle, emptyMessage, icon);
+        }
+        function renderLiveClasses() {
+            const target = document.getElementById("live-classes-list");
+            if (!target) return;
+            const remindersButton = document.getElementById("enable-live-reminders");
+            if (!("Notification" in window)) {
+                remindersButton.textContent = "Reminders unavailable";
+                remindersButton.disabled = true;
+            } else if (Notification.permission === "granted") {
+                remindersButton.textContent = "Reminders enabled";
+                remindersButton.disabled = true;
+            } else if (Notification.permission === "denied") {
+                remindersButton.textContent = "Notifications blocked";
+                remindersButton.disabled = true;
+                remindersButton.title = "Allow notifications for this site in browser settings.";
+            } else {
+                remindersButton.textContent = "Enable reminders";
+                remindersButton.disabled = false;
+                remindersButton.removeAttribute("title");
+            }
+            const now = Date.now();
+            const classes = [...scheduledClasses].sort((first, second) => Date.parse(first.startAt) - Date.parse(second.startAt));
+            setText("live-classes-count", classes.length ? `${classes.length} scheduled` : "");
+            if (!classes.length) {
+                target.innerHTML = emptyMarkup("No live classes scheduled", "Open All Lectures and schedule any video for a future time.", "clock");
+                return;
+            }
+            target.innerHTML = classes.map((scheduledClass) => {
+                const startsAt = Date.parse(scheduledClass.startAt);
+                const endsAt = startsAt + Number(scheduledClass.duration) * 1000;
+                const isUpcoming = now < startsAt;
+                const isLive = now >= startsAt && now < endsAt;
+                const stateLabel = isUpcoming ? "Upcoming" : isLive ? "Live now" : "Ended";
+                const stateClass = isLive ? "is-live" : "";
+                const timeLabel = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(startsAt));
+                const action = isUpcoming
+                    ? `<button type="button" data-cancel-schedule="${escapeHtml(scheduledClass.id)}">Cancel</button>`
+                    : isLive
+                        ? `<button type="button" data-join-live="${escapeHtml(scheduledClass.id)}">Join live</button>`
+                        : `<button type="button" data-remove-schedule="${escapeHtml(scheduledClass.id)}">Remove</button>`;
+                return `<article class="live-class-card">
+                    <div class="live-class-copy"><strong>${escapeHtml(formatVideoTitle(scheduledClass.title))}</strong><span>${isLive ? "Live until" : isUpcoming ? "Starts" : "Was scheduled for"} ${escapeHtml(timeLabel)} · ${escapeHtml(formatDuration(scheduledClass.duration))}</span><span class="live-class-state ${stateClass}">${stateLabel}</span></div>
+                    <div class="live-class-actions">${action}</div>
+                </article>`;
+            }).join("");
+        }
+        function openScheduleDialog(video) {
+            if (!Number.isFinite(Number(video.duration)) || Number(video.duration) <= 0) {
+                showToast("This video duration is not available to schedule.");
+                return;
+            }
+            selectedScheduleVideoId = video.id;
+            document.getElementById("schedule-video-title").textContent = formatVideoTitle(video.title || video.fileName);
+            document.getElementById("schedule-error").textContent = "";
+            const localStart = new Date(Date.now() + 5 * 60 * 1000);
+            localStart.setMinutes(localStart.getMinutes() - localStart.getTimezoneOffset());
+            document.getElementById("schedule-start").value = localStart.toISOString().slice(0, 16);
+            document.getElementById("schedule-dialog").showModal();
         }
         function sortByRecent(list) {
             return [...list].sort((a, b) => (state.history[b.id] || b.createdAt || "").toString().localeCompare((state.history[a.id] || a.createdAt || "").toString()));
@@ -1405,6 +1600,7 @@
             renderGrid("continue-grid", continueList, "You haven't started any videos yet.", "Videos you pause before finishing will appear here.", "clock");
             renderGrid("completed-grid", completedList, "No completed videos yet.", "Finish a video and it will appear in your completed list.", "check");
             renderYoutubeLater();
+            renderLiveClasses();
             renderGrid("today-grid", todayList, "No recent lectures.", "Videos sent to the bot in the last 24 hours will appear here.", "clock");
             renderGrid("all-lecture-grid", allLectureList, "No lectures yet.", "Videos you send to the bot will appear here.", "play");
             renderGrid("search-grid", query ? searchList : [], query ? "No videos found." : "Search your collection.", query ? "Try a different title, category, or subject." : "Use the search bar to find a video.", "play");
@@ -1564,7 +1760,7 @@
             youtubeSuggestionTimer = window.setTimeout(() => fetchYoutubeSuggestions(query, requestId), 250);
         }
         function setView(view, updateHash = true) {
-            const valid = ["home", "continue", "completed", "later", "today", "all-lecture", "search", "study"];
+            const valid = ["home", "continue", "completed", "later", "today", "all-lecture", "live-classes", "search", "study"];
             activeView = valid.includes(view) ? view : "home";
             document.body.classList.toggle("youtube-view", activeView === "study");
             document.querySelectorAll("[data-view-panel]").forEach((panel) => panel.classList.toggle("active", panel.dataset.viewPanel === activeView));
@@ -1581,12 +1777,59 @@
         }
         function bindEvents() {
             const loginDialog = document.getElementById("login-dialog");
+            const scheduleDialog = document.getElementById("schedule-dialog");
             window.setInterval(checkWebSession, 15000);
+            window.setInterval(renderLiveClasses, 15000);
+            window.setInterval(checkScheduleReminders, 15000);
             window.addEventListener("focus", checkWebSession);
+            window.addEventListener("focus", checkScheduleReminders);
+            document.addEventListener("visibilitychange", checkScheduleReminders);
+            document.getElementById("enable-live-reminders").addEventListener("click", async () => {
+                if (!("Notification" in window)) return;
+                try {
+                    await Notification.requestPermission();
+                    renderLiveClasses();
+                    checkScheduleReminders();
+                } catch {
+                    showToast("Notifications could not be enabled in this browser.");
+                }
+            });
             document.getElementById("health-pill").addEventListener("click", openLoginDialog);
             document.getElementById("login-cancel").addEventListener("click", () => loginDialog.close());
             loginDialog.addEventListener("click", (event) => {
                 if (event.target === loginDialog) loginDialog.close();
+            });
+            document.getElementById("schedule-cancel").addEventListener("click", () => scheduleDialog.close());
+            scheduleDialog.addEventListener("click", (event) => {
+                if (event.target === scheduleDialog) scheduleDialog.close();
+            });
+            document.getElementById("schedule-form").addEventListener("submit", (event) => {
+                event.preventDefault();
+                const error = document.getElementById("schedule-error");
+                const selectedStart = new Date(document.getElementById("schedule-start").value);
+                const video = videos.find((item) => item.id === selectedScheduleVideoId);
+                error.textContent = "";
+                if (!video || !Number.isFinite(selectedStart.getTime()) || selectedStart.getTime() <= Date.now()) {
+                    error.textContent = "Choose a future date and time.";
+                    return;
+                }
+                const conflict = findScheduleConflict(selectedStart, Number(video.duration));
+                if (conflict) {
+                    error.textContent = `This overlaps with ${formatVideoTitle(conflict.title)}. Choose another time.`;
+                    return;
+                }
+                scheduledClasses.push({
+                    id: `${video.id}-${Date.now()}`,
+                    videoId: video.id,
+                    title: video.title || video.fileName || "Untitled video",
+                    startAt: selectedStart.toISOString(),
+                    duration: Number(video.duration),
+                });
+                if (!saveScheduledClasses()) return;
+                scheduleDialog.close();
+                renderAll();
+                setView("live-classes");
+                showToast("Live class scheduled");
             });
             document.getElementById("login-form").addEventListener("submit", (event) => {
                 event.preventDefault();
@@ -1614,6 +1857,36 @@
                     return;
                 }
                 if (!event.target.closest(".youtube-search-wrap")) closeYoutubeSuggestions();
+                const scheduleButton = event.target.closest("[data-schedule-video]");
+                if (scheduleButton) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const video = videos.find((item) => item.id === scheduleButton.dataset.scheduleVideo);
+                    if (video) openScheduleDialog(video);
+                    return;
+                }
+                const cancelSchedule = event.target.closest("[data-cancel-schedule], [data-remove-schedule]");
+                if (cancelSchedule) {
+                    const scheduleId = cancelSchedule.dataset.cancelSchedule || cancelSchedule.dataset.removeSchedule;
+                    scheduledClasses = scheduledClasses.filter((item) => item.id !== scheduleId);
+                    Object.keys(sentScheduleReminders).forEach((key) => {
+                        if (key.startsWith(`${scheduleId}:`)) delete sentScheduleReminders[key];
+                    });
+                    saveScheduleReminders();
+                    saveScheduledClasses();
+                    return;
+                }
+                const joinLive = event.target.closest("[data-join-live]");
+                if (joinLive) {
+                    const scheduledClass = scheduledClasses.find((item) => item.id === joinLive.dataset.joinLive);
+                    if (!scheduledClass) return;
+                    const params = new URLSearchParams({
+                        scheduled_start: String(Date.parse(scheduledClass.startAt)),
+                        scheduled_duration: String(scheduledClass.duration),
+                    });
+                    window.location.assign(`/show/${encodeURIComponent(scheduledClass.videoId)}?${params}`);
+                    return;
+                }
                 const openLogin = event.target.closest("[data-open-login]");
                 if (openLogin) {
                     openLoginDialog();
@@ -1678,7 +1951,20 @@
             document.getElementById("clear-completed").addEventListener("click", () => { if (!state.completed.length) return; state.completed = []; writeState(); renderAll(); showToast("Completed list cleared"); });
             window.addEventListener("hashchange", () => setView(window.location.hash.slice(1), false));
             window.addEventListener("popstate", () => setView(pathViews[window.location.pathname] || "home", false));
-            window.addEventListener("storage", () => { state = readState(); renderAll(); });
+            window.addEventListener("storage", (event) => {
+                if (event.key === scheduleStorageKey) {
+                    scheduledClasses = readScheduledClasses();
+                    renderLiveClasses();
+                    checkScheduleReminders();
+                    return;
+                }
+                if (event.key === scheduleReminderStorageKey) {
+                    sentScheduleReminders = readScheduleReminders();
+                    return;
+                }
+                state = readState();
+                renderAll();
+            });
         }
         async function loadCatalog() {
             try {
@@ -1720,7 +2006,7 @@
             }
             renderAll();
         }
-        bindEvents(); setView(activeView, false); renderAll(); loadCatalog();
+        bindEvents(); setView(activeView, false); renderAll(); checkScheduleReminders(); loadCatalog();
     </script>
     <script src="/static/pwa-register.js" defer></script>
     <script src="/static/aurora.js?v=2" defer></script>

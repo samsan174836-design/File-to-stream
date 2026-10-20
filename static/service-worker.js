@@ -56,3 +56,21 @@ self.addEventListener("fetch", (event) => {
         return response;
     })());
 });
+
+self.addEventListener("notificationclick", (event) => {
+    event.notification.close();
+    const requestedUrl = event.notification.data?.url || "/live-classes";
+    const parsedUrl = new URL(requestedUrl, self.location.origin);
+    const targetUrl = parsedUrl.origin === self.location.origin
+        ? parsedUrl.href
+        : new URL("/live-classes", self.location.origin).href;
+    event.waitUntil((async () => {
+        const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+        const existingClient = clients.find((client) => new URL(client.url).origin === self.location.origin);
+        if (existingClient) {
+            const navigatedClient = await existingClient.navigate(targetUrl);
+            return (navigatedClient || existingClient).focus();
+        }
+        return self.clients.openWindow(targetUrl);
+    })());
+});

@@ -940,6 +940,7 @@ async def pwa_service_worker():
 @app.get("/later", response_class=HTMLResponse)
 @app.get("/today", response_class=HTMLResponse)
 @app.get("/all-lecture", response_class=HTMLResponse)
+@app.get("/live-classes", response_class=HTMLResponse)
 async def library_section_page(request: Request):
     section = request.url.path.strip("/") or "home"
     return templates.TemplateResponse(

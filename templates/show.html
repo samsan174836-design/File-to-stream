@@ -3200,6 +3200,14 @@
 
     <script>
         const fileId = decodeURIComponent(window.location.pathname.split("/").pop());
+        const scheduledUrlParams = new URLSearchParams(window.location.search);
+        const scheduledStartAt = Number(scheduledUrlParams.get("scheduled_start"));
+        const scheduledDurationSeconds = Number(scheduledUrlParams.get("scheduled_duration"));
+        const isScheduledLiveLink = scheduledUrlParams.has("scheduled_start")
+            && scheduledUrlParams.has("scheduled_duration")
+            && Number.isFinite(scheduledStartAt)
+            && Number.isFinite(scheduledDurationSeconds)
+            && scheduledDurationSeconds > 0;
         const loader = document.getElementById("loader");
         const content = document.getElementById("content");
         const playerFileHeading = document.getElementById("player-file-heading");
@@ -3257,6 +3265,9 @@
         let streamingMode = "fast";
         let liveEdgeStartedAt = 0;
         let liveEdgeStartedClock = 0;
+        let scheduledLiveSession = false;
+        let scheduledLiveStartTimer = null;
+        let scheduledSessionExpired = false;
         let liveStateTimer = null;
         let liveAutoResumeTimer = null;
         let liveFinishTimer = null;
@@ -3382,7 +3393,8 @@
          }
 
          function attemptAutoplay() {
-            if (!activeMedia || playbackCompleted || !activeMedia.src) return;
+            if (!activeMedia || playbackCompleted || scheduledSessionExpired
+                || (isScheduledLiveLink && !scheduledLiveSession) || !activeMedia.src) return;
              activeMedia.autoplay = true;
              const playback = activeMedia.play();
              if (!playback || typeof playback.catch !== "function") return;
@@ -3435,10 +3447,11 @@
             };
 
             const startWhenBuffered = () => {
-                if (activeMedia !== media || playbackCompleted || !media.paused) {
+                if (activeMedia !== media || playbackCompleted || scheduledSessionExpired || !media.paused) {
                     stopWatching();
                     return;
                 }
+                if (isScheduledLiveLink && !scheduledLiveSession) return;
                 if (media.readyState < 2) return;
 
                 const remainingSeconds = Number.isFinite(media.duration)
@@ -3717,7 +3730,8 @@
         }
 
         function startPlayback() {
-            if (!activeMedia || playbackCompleted) return;
+            if (!activeMedia || playbackCompleted || scheduledSessionExpired
+                || (isScheduledLiveLink && !scheduledLiveSession)) return;
              enableSoundAfterInteraction();
             if (liveAutoResumeTimer) {
                 clearLiveAutoResumeTimer();
@@ -3837,6 +3851,16 @@
                 activeMedia.preload = "auto";
                 return;
             }
+            if (scheduledSessionExpired) return;
+            if (isScheduledLiveLink && !scheduledLiveSession) {
+                activeMedia.preload = "auto";
+                return;
+            }
+            if (scheduledLiveSession) {
+                activeMedia.currentTime = Math.min(getLivePlaybackLimit(), activeMedia.duration);
+                activeMedia.preload = "auto";
+                return;
+            }
             if (hasCompletedPlayback()) {
                 showCompletionState();
                 return;
@@ -3851,6 +3875,7 @@
 
         function applyServerPlaybackPosition(position) {
             serverPlaybackPosition = Number.isFinite(position) ? position : 0;
+            if (isScheduledLiveLink || scheduledLiveSession || scheduledSessionExpired) return;
             if (!activeMedia || !Number.isFinite(activeMedia.duration)
                 || serverPlaybackPosition <= 0
                 || serverPlaybackPosition >= activeMedia.duration - 1) {
@@ -3940,10 +3965,9 @@
                 return;
             }
 
-            const remainingSeconds = Math.max(
-                0,
-                activeMedia.duration - liveEdgeStartedAt + liveLagSeconds
-            );
+            const remainingSeconds = scheduledLiveSession
+                ? Math.max(0, (scheduledStartAt + scheduledDurationSeconds * 1000 - Date.now()) / 1000)
+                : Math.max(0, activeMedia.duration - liveEdgeStartedAt + liveLagSeconds);
             liveFinishTimer = window.setTimeout(() => {
                 liveFinishTimer = null;
                 if (streamingMode !== "live" || !activeMedia || playbackCompleted) return;
@@ -4056,7 +4080,48 @@
              }
          }
 
+        function markScheduledSessionExpired() {
+            scheduledSessionExpired = true;
+            window.clearTimeout(scheduledLiveStartTimer);
+            scheduledLiveStartTimer = null;
+            activeMedia?.pause();
+            customControls.hidden = true;
+            bigPlay.hidden = true;
+            loader.textContent = "This scheduled class has ended.";
+            loader.hidden = false;
+        }
+
+        function startScheduledLiveSession() {
+            scheduledLiveStartTimer = null;
+            if (Date.now() >= scheduledStartAt + scheduledDurationSeconds * 1000) {
+                markScheduledSessionExpired();
+                return;
+            }
+            scheduledLiveSession = true;
+            streamingMode = "live";
+            liveEdgeStartedAt = 0;
+            liveEdgeStartedClock = scheduledStartAt;
+            restorePlaybackPosition();
+            updateStreamModeUi();
+            scheduleLiveFinish();
+            attemptAutoplay();
+        }
+
         function restoreLiveModeState() {
+            if (isScheduledLiveLink) {
+                const scheduledEndAt = scheduledStartAt + scheduledDurationSeconds * 1000;
+                if (Date.now() >= scheduledEndAt) {
+                    markScheduledSessionExpired();
+                    return;
+                }
+                const delayUntilStart = scheduledStartAt - Date.now();
+                if (delayUntilStart > 0) {
+                    scheduledLiveStartTimer = window.setTimeout(startScheduledLiveSession, delayUntilStart);
+                } else {
+                    startScheduledLiveSession();
+                }
+                return;
+            }
             if (hasCompletedPlayback()) {
                 streamingMode = "fast";
                 liveEdgeStartedAt = 0;
