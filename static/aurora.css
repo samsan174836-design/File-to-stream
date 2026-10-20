@@ -442,14 +442,14 @@ input[type="range"].volume-bar::-webkit-slider-thumb { background: #fff6dc !impo
 .player-page .volume-bar { width: 56px; }
 .player-page .progress-track { height: 4px !important; }
 .player-page .progress-track:hover { height: 4px !important; }
-.player-page .progress-buffer { display: none; }
 .player-page .progress-bar {
   height: 20px;
   touch-action: pan-y;
   background: linear-gradient(
     90deg,
     var(--g-gold) 0 var(--played, 0%),
-    rgba(255,255,255,.38) var(--played, 0%) 100%
+    #fff var(--played, 0%) var(--buffered, 0%),
+    rgba(255,255,255,.38) var(--buffered, 0%) 100%
   ) center / 100% 4px no-repeat;
 }
 .player-page .progress-bar::-webkit-slider-runnable-track {
@@ -464,20 +464,20 @@ input[type="range"].volume-bar::-webkit-slider-thumb { background: #fff6dc !impo
   width: 12px;
   height: 12px;
   margin-top: -4px;
-  border: 2px solid #fff6dc !important;
+  border: 0 !important;
   border-radius: 50%;
-  background: var(--g-gold) !important;
+  background: transparent !important;
   box-shadow: none !important;
-  opacity: 1 !important;
+  opacity: 0 !important;
 }
 .player-page .progress-bar::-moz-range-thumb {
   width: 8px;
   height: 8px;
-  border: 2px solid #fff6dc !important;
+  border: 0 !important;
   border-radius: 50%;
-  background: var(--g-gold) !important;
+  background: transparent !important;
   box-shadow: none !important;
-  opacity: 1 !important;
+  opacity: 0 !important;
 }
 
 @media (max-width: 640px) {
@@ -578,4 +578,18 @@ html body.player-page .disclaimer {
   border-color: var(--g-line-strong) !important;
   color: var(--g-muted) !important;
   background: var(--g-surface2) !important;
+}
+html body.player-page .live-edge-label {
+  border-color: #ff7378 !important;
+  color: #fff !important;
+  background: #d72f3b !important;
+}
+html body.player-page .stream-mode-toggle.is-live {
+  border-color: #ff7378 !important;
+  color: #fff !important;
+  background: #b92330 !important;
+}
+html body.player-page .stream-mode-toggle.is-live::before {
+  background: #ff4b55 !important;
+  box-shadow: 0 0 0 3px rgba(255,75,85,.2), 0 0 10px rgba(255,75,85,.72) !important;
 }

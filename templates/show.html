@@ -3045,7 +3045,7 @@
             }
         }
     </style>
-    <link rel="stylesheet" href="/static/aurora.css?v=3">
+    <link rel="stylesheet" href="/static/aurora.css?v=4">
 </head>
 <body class="player-page">
     <header class="topbar">
@@ -3121,13 +3121,12 @@
                     <span class="live-edge-label" id="live-edge-label" aria-hidden="true">LIVE</span>
                 </div>
                 <div class="progress-track">
-                    <div class="progress-buffer" id="progress-buffer" aria-hidden="true"></div>
                     <input class="progress-bar" id="progress-bar" type="range" min="0" max="1000" value="0" aria-label="Video progress">
                 </div>
                 <div class="control-row">
                     <button class="control-btn" id="play-toggle" aria-label="Play or pause"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg></button>
-                    <button class="control-btn skip-btn" id="skip-back-toggle" type="button" aria-label="Back 10 seconds" title="Back 10 seconds"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 10l5-4v3c6 0 9 3 8 9"/></svg><small>10</small></button>
-                    <button class="control-btn skip-btn" id="skip-forward-toggle" type="button" aria-label="Forward 10 seconds" title="Forward 10 seconds"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 14 5-4-5-4v3c-6 0-9 3-8 9"/></svg><small>10</small></button>
+                    <button class="control-btn skip-btn" id="skip-back-toggle" type="button" aria-label="Back 10 seconds" title="Back 10 seconds"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 10l5-4v3c6 0 9 3 8 9"/></svg></button>
+                    <button class="control-btn skip-btn" id="skip-forward-toggle" type="button" aria-label="Forward 10 seconds" title="Forward 10 seconds"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 14 5-4-5-4v3c-6 0-9 3-8 9"/></svg></button>
                     <button class="control-btn" id="mute-toggle" aria-label="Mute or unmute"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4zM15 9a5 5 0 0 1 0 6M18 6a9 9 0 0 1 0 12"/></svg></button>
                     <input class="volume-bar" id="volume-bar" type="range" min="0" max="1" step="0.05" value="0.9" aria-label="Volume">
                     <span class="control-spacer"></span>
@@ -3214,7 +3213,6 @@
         const skipBackToggle = document.getElementById("skip-back-toggle");
         const skipForwardToggle = document.getElementById("skip-forward-toggle");
         const progressBar = document.getElementById("progress-bar");
-        const progressBuffer = document.getElementById("progress-buffer");
         const timeLabel = document.getElementById("time-label");
         const muteToggle = document.getElementById("mute-toggle");
         const volumeBar = document.getElementById("volume-bar");
@@ -3239,6 +3237,7 @@
         let pomodoroRemaining = pomodoroWorkDuration;
         let pomodoroResumePlayback = false;
         let pomodoroInterval = null;
+        let pomodoroAudioContext = null;
         let activeMedia = null;
         let playbackCompleted = false;
         let isProgressSeeking = false;
@@ -3468,6 +3467,43 @@
             return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
         }
 
+        function getPomodoroAudioContext() {
+            const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContextConstructor) return null;
+            try {
+                if (!pomodoroAudioContext) pomodoroAudioContext = new AudioContextConstructor();
+                if (pomodoroAudioContext.state === "suspended") {
+                    void pomodoroAudioContext.resume().catch(() => {});
+                }
+                return pomodoroAudioContext;
+            } catch {
+                return null;
+            }
+        }
+
+        function playPomodoroChime(phase) {
+            const audioContext = getPomodoroAudioContext();
+            if (!audioContext) return;
+            const notes = phase === "focus-complete"
+                ? [659.25, 830.61, 1046.5]
+                : [523.25, 659.25, 783.99, 1046.5];
+            const startTime = audioContext.currentTime + 0.04;
+            notes.forEach((frequency, index) => {
+                const noteStart = startTime + index * 0.17;
+                const oscillator = audioContext.createOscillator();
+                const gain = audioContext.createGain();
+                oscillator.type = phase === "focus-complete" ? "triangle" : "sine";
+                oscillator.frequency.setValueAtTime(frequency, noteStart);
+                gain.gain.setValueAtTime(0.0001, noteStart);
+                gain.gain.exponentialRampToValueAtTime(0.14, noteStart + 0.025);
+                gain.gain.exponentialRampToValueAtTime(0.0001, noteStart + 0.23);
+                oscillator.connect(gain);
+                gain.connect(audioContext.destination);
+                oscillator.start(noteStart);
+                oscillator.stop(noteStart + 0.24);
+            });
+        }
+
         function renderPomodoro() {
             const status = document.getElementById("pomodoro-status");
             if (pomodoroPhase === "idle") {
@@ -3500,6 +3536,7 @@
             }
 
             if (pomodoroPhase === "work") {
+                playPomodoroChime("focus-complete");
                 pomodoroCycle += 1;
                 pomodoroPhase = "break";
                 pomodoroRemaining = pomodoroBreakDuration;
@@ -3508,6 +3545,7 @@
                 activeMedia?.pause();
                 document.getElementById("pomodoro-break-overlay").hidden = false;
             } else if (pomodoroPhase === "break") {
+                playPomodoroChime("ready");
                 document.getElementById("pomodoro-break-overlay").hidden = true;
                 if (pomodoroCycle === 4) {
                     pomodoroPhase = "done";
@@ -3539,6 +3577,7 @@
             }
             pomodoroRunning = !pomodoroRunning;
             if (pomodoroRunning) {
+                getPomodoroAudioContext();
                 pomodoroDeadline = Date.now() + pomodoroRemaining;
                 if (!pomodoroInterval) pomodoroInterval = window.setInterval(updatePomodoro, 1000);
             } else {
@@ -3650,9 +3689,8 @@
              const bufferedPercentage = progressVisualEnd > 0
                  ? Math.min(100, Math.max(playedPercentage, (bufferedEnd / progressVisualEnd) * 100))
                 : 0;
-            progressBuffer.style.setProperty("--played", `${playedPercentage}%`);
-            progressBuffer.style.setProperty("--buffered", `${bufferedPercentage}%`);
             progressBar.style.setProperty("--played", `${playedPercentage}%`);
+            progressBar.style.setProperty("--buffered", `${bufferedPercentage}%`);
             const volumeValue = activeMedia.muted ? 0 : activeMedia.volume;
             volumeBar.value = String(volumeValue);
             volumeBar.style.setProperty("--volume-level", `${volumeValue * 100}%`);
@@ -4382,7 +4420,11 @@
                 const isVideo = mime.startsWith("video/");
                 const isAudio = mime.startsWith("audio/");
                 const originalFileName = data.file_name || "This file";
-                const displayFileName = originalFileName.replace(/\.mp4$/i, "") || "This file";
+                const displayFileName = originalFileName
+                    .replace(/\.[^/.]+$/, "")
+                    .replace(/_+/g, " ")
+                    .replace(/\s+/g, " ")
+                    .trim() || "This file";
 
                 if (isVideo || isAudio) {
                     loader.textContent = isVideo ? "Video loading..." : "Audio loading...";

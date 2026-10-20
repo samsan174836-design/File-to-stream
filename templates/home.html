@@ -89,6 +89,13 @@
         .secondary-btn:hover { background: var(--green-50); }
         .form-error { min-height: 18px; margin: 8px 0 0 3px; color: var(--danger); font-size: 11px; }
         .hero-visual { position: relative; min-height: 330px; overflow: hidden; padding: 25px; border: 1px solid #cfe6d6; border-radius: 24px; background: linear-gradient(145deg, rgba(255,255,255,.95), rgba(229,247,235,.9)); box-shadow: var(--shadow); }
+        @media (prefers-reduced-motion: no-preference) {
+            .hero-visual { animation: continue-feature-float 5.5s ease-in-out infinite; }
+        }
+        @keyframes continue-feature-float {
+            0%, 100% { translate: 0 0; }
+            50% { translate: 0 -5px; }
+        }
         .hero-visual::before, .hero-visual::after { position: absolute; border-radius: 50%; background: rgba(94, 190, 126, .16); content: ""; }
         .hero-visual::before { width: 180px; height: 180px; right: -65px; top: -65px; }
         .hero-visual::after { width: 140px; height: 140px; bottom: -72px; left: -50px; }
@@ -99,6 +106,10 @@
         .visual-link[hidden] { display: none; }
         .visual-screen.has-thumbnail::before { background: linear-gradient(0deg, rgba(12, 8, 19, .5), transparent 48%); }
         .visual-thumbnail { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+        .visual-preview { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .35s ease; }
+        .visual-preview.is-playing { opacity: 1; }
+        .visual-thumbnail { z-index: 1; }
+        .visual-play, .featured-progress { z-index: 3; }
         .visual-play { position: relative; display: grid; width: 58px; height: 58px; place-items: center; padding-left: 3px; border-radius: 50%; color: var(--green-800); background: #fff; box-shadow: 0 13px 28px rgba(0,0,0,.24); font-size: 19px; }
         .visual-bar { position: absolute; right: 15px; bottom: 14px; left: 15px; height: 4px; overflow: hidden; border-radius: 99px; background: rgba(255,255,255,.24); }
         .visual-bar::before { display: block; width: 42%; height: 100%; border-radius: inherit; background: #61d88e; content: ""; }
@@ -657,7 +668,7 @@
             gap: 8px;
         }
     </style>
-    <link rel="stylesheet" href="/static/aurora.css?v=3">
+    <link rel="stylesheet" href="/static/aurora.css?v=4">
 </head>
 <body>
     <div class="app-shell">
@@ -715,6 +726,7 @@
                             <a class="visual-link" id="continue-feature" href="#" hidden>
                                 <div class="visual-screen" id="continue-feature-screen">
                                     <img class="visual-thumbnail" id="continue-feature-thumbnail" alt="" hidden>
+                                    <video class="visual-preview" id="continue-feature-preview" muted playsinline preload="none" aria-hidden="true" hidden></video>
                                     <div class="visual-play" aria-hidden="true">▶</div>
                                     <div class="visual-bar featured-progress" id="continue-feature-progress" aria-hidden="true"></div>
                                 </div>
@@ -778,6 +790,8 @@
         let videos = [];
         let authRequired = false;
         let recentLectureRefreshTimer = null;
+        let featuredPreviewVideoId = "";
+        let featuredPreviewTimer = null;
         const viewPaths = { home: "/", continue: "/continue", completed: "/completed", later: "/later", today: "/today", "all-lecture": "/all-lecture", search: "/", study: "/" };
         const pathViews = { "/": "home", "/home": "home", "/continue": "continue", "/completed": "completed", "/later": "later", "/today": "today", "/all-lecture": "all-lecture" };
         let activeView = pathViews[window.location.pathname] || window.location.hash.slice(1) || "{{ initial_view|default('home') }}";
@@ -830,6 +844,13 @@
         }
         function escapeHtml(value) {
             return String(value || "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
+        }
+        function formatVideoTitle(value) {
+            return String(value || "Untitled video")
+                .replace(/\.(?:mp4|mkv|mov|avi|webm|m4v|mp3|m4a|aac|wav|flac|ogg)$/i, "")
+                .replace(/_+/g, " ")
+                .replace(/\s+/g, " ")
+                .trim() || "Untitled video";
         }
         function isCompleted(id) { return state.completed.includes(id); }
         function progressFor(video) {
@@ -1187,7 +1208,7 @@
             return `<article class="video-card" data-card-id="${escapeHtml(video.id)}">
                 <a class="video-link" href="${escapeHtml(video.videoUrl || `/show/${encodeURIComponent(video.id)}`)}">
                     <div class="thumb"><img loading="lazy" data-video-id="${escapeHtml(video.id)}" data-thumbnail-url="${escapeHtml(video.thumbnail || "")}" data-preview-url="${escapeHtml(video.previewUrl || "")}" alt=""><span class="thumb-play">${icons.play}</span>${duration ? `<span class="thumb-duration">${escapeHtml(duration)}</span>` : ""}<button class="remove-video" data-remove="${escapeHtml(video.id)}" type="button" aria-label="Remove from your lists">${icons.remove}</button><button class="bookmark ${saved ? "saved" : ""}" data-bookmark="${escapeHtml(video.id)}" type="button" aria-label="${saved ? "Remove from watch later" : "Save for later"}">${icons.bookmark}</button></div>
-                    <div class="card-body"><h3 class="card-title">${escapeHtml(video.title || video.fileName || "Untitled video")}</h3><div class="card-meta">${meta.map((item, index) => `${index ? '<span class="meta-dot"></span>' : ""}<span>${escapeHtml(item)}</span>`).join("") || "<span>Video</span>"}</div>
+                    <div class="card-body"><h3 class="card-title">${escapeHtml(formatVideoTitle(video.title || video.fileName))}</h3><div class="card-meta">${meta.map((item, index) => `${index ? '<span class="meta-dot"></span>' : ""}<span>${escapeHtml(item)}</span>`).join("") || "<span>Video</span>"}</div>
                     ${progress ? `<div class="progress-track"><div class="progress-fill" style="width:${progress}%"></div></div><div class="progress-copy"><span>${Math.round(progress)}% watched</span><span>Resume</span></div>` : done ? `<div class="progress-copy"><span>${icons.check} Completed</span></div>` : `<span class="card-action">Watch now ↗</span>`}</div>
                 </a>
             </article>`;
@@ -1263,11 +1284,64 @@
                 image.hidden = false;
             }
         }
+        function stopFeaturedPreview(expectedVideoId = "") {
+            if (expectedVideoId && expectedVideoId !== featuredPreviewVideoId) return;
+            window.clearTimeout(featuredPreviewTimer);
+            featuredPreviewTimer = null;
+            const preview = document.getElementById("continue-feature-preview");
+            preview.pause();
+            preview.classList.remove("is-playing");
+            preview.hidden = true;
+            preview.removeAttribute("src");
+            preview.load();
+            featuredPreviewVideoId = "";
+        }
+        function startFeaturedPreview(video) {
+            const preview = document.getElementById("continue-feature-preview");
+            if (featuredPreviewVideoId === video.id) return;
+            stopFeaturedPreview();
+            if (!video.isVideo || !video.previewUrl) return;
+            featuredPreviewVideoId = video.id;
+            preview.muted = true;
+            preview.hidden = false;
+            preview.src = video.previewUrl;
+            const resumeProgress = state.progress[video.id];
+            preview.addEventListener("loadedmetadata", () => {
+                if (featuredPreviewVideoId !== video.id) return;
+                const savedPosition = Number(resumeProgress?.position);
+                const percentagePosition = Number.isFinite(preview.duration) && preview.duration > 0
+                    ? preview.duration * progressFor(video) / 100
+                    : 0;
+                const startAt = Number.isFinite(savedPosition) && savedPosition > 0
+                    ? savedPosition
+                    : percentagePosition;
+                if (Number.isFinite(preview.duration) && startAt >= preview.duration) {
+                    stopFeaturedPreview(video.id);
+                    return;
+                }
+                const playPreview = () => {
+                    if (featuredPreviewVideoId !== video.id) return;
+                    preview.play().then(() => {
+                        preview.classList.add("is-playing");
+                        featuredPreviewTimer = window.setTimeout(() => stopFeaturedPreview(video.id), 10000);
+                    }).catch(() => stopFeaturedPreview(video.id));
+                };
+                if (startAt > 0.05) {
+                    preview.addEventListener("seeked", playPreview, { once: true });
+                    preview.currentTime = startAt;
+                } else {
+                    playPreview();
+                }
+            }, { once: true });
+            preview.addEventListener("ended", () => stopFeaturedPreview(video.id), { once: true });
+            preview.addEventListener("error", () => stopFeaturedPreview(video.id), { once: true });
+        }
         function renderContinueFeature(video) {
             const feature = document.getElementById("continue-feature");
             const placeholder = document.getElementById("hero-visual-placeholder");
             const label = document.getElementById("hero-visual-label");
             if (!video) {
+                stopFeaturedPreview();
                 feature.hidden = true;
                 placeholder.hidden = false;
                 label.textContent = "A better way to press play";
@@ -1293,8 +1367,9 @@
             if (!isSameVideo || image.hidden || !image.getAttribute("src")) {
                 void restoreFeaturedThumbnail(image, video);
             }
+            startFeaturedPreview(video);
             document.getElementById("continue-feature-title").textContent =
-                video.title || video.fileName || "Untitled video";
+                formatVideoTitle(video.title || video.fileName);
             document.getElementById("continue-feature-watched").textContent = `${Math.round(progress)}% watched`;
             document.getElementById("continue-feature-progress").style.setProperty("--watch-progress", `${progress}%`);
         }
