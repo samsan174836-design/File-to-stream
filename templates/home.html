@@ -979,17 +979,38 @@
         function setText(id, text) { const node = document.getElementById(id); if (node) node.textContent = text || ""; }
         function startHeroTypewriter() {
             const headline = document.getElementById("hero-headline");
-            const text = headline.textContent;
-            if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
-            headline.textContent = "";
-            let visibleCharacters = 0;
-            const typeNextCharacter = () => {
-                if (!headline.isConnected) return;
-                visibleCharacters += 1;
-                headline.textContent = text.slice(0, visibleCharacters);
-                if (visibleCharacters < text.length) window.setTimeout(typeNextCharacter, 42);
+            const phrases = [
+                "Watch what matters, without the noise.",
+                "Study with less distraction, more focus.",
+                "Your lectures, your pace, your comfort.",
+                "Stream cleaner. Watch deeper. Stay present."
+            ];
+            if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+                headline.textContent = phrases[0];
+                return;
+            }
+            let phraseIndex = 0;
+            const typePhrase = (text, callback) => {
+                headline.textContent = "";
+                let visibleCharacters = 0;
+                const nextCharacter = () => {
+                    if (!headline.isConnected) return;
+                    visibleCharacters += 1;
+                    headline.textContent = text.slice(0, visibleCharacters);
+                    if (visibleCharacters < text.length) {
+                        window.setTimeout(nextCharacter, 42);
+                    } else {
+                        window.setTimeout(callback, 1200);
+                    }
+                };
+                window.setTimeout(nextCharacter, 180);
             };
-            window.setTimeout(typeNextCharacter, 250);
+            const cycleText = () => {
+                const currentPhrase = phrases[phraseIndex % phrases.length];
+                phraseIndex += 1;
+                typePhrase(currentPhrase, cycleText);
+            };
+            cycleText();
         }
         function formatDuration(seconds) {
             if (!Number.isFinite(Number(seconds)) || Number(seconds) <= 0) return "";
