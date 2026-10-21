@@ -107,6 +107,10 @@
         .visual-link[hidden] { display: none; }
         .visual-screen.has-thumbnail::before { background: linear-gradient(0deg, rgba(12, 8, 19, .5), transparent 48%); }
         .visual-thumbnail { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+        .video-thumb-link { position: absolute; inset: 0; z-index: 1; display: grid; place-items: center; color: inherit; text-decoration: none; }
+        .video-thumb-link .thumb-play { z-index: 2; }
+        .video-thumb-link .thumb-duration { z-index: 2; }
+        .thumb .remove-video, .thumb .bookmark { z-index: 3; }
         .visual-preview { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .35s ease; }
         .visual-preview.is-playing { opacity: 1; }
         .visual-thumbnail { z-index: 1; }
@@ -185,6 +189,9 @@
         .page-title { display: flex; align-items: end; justify-content: space-between; gap: 18px; margin-bottom: 25px; }
         .page-title h1 { font-size: clamp(31px, 4vw, 46px); }
         .page-title p { margin: 8px 0 0; color: var(--muted); font-size: 13px; }
+        #hero-headline::after { display: inline-block; height: .9em; margin-left: 3px; border-right: 2px solid currentColor; content: ""; vertical-align: -.06em; animation: typewriter-caret .8s steps(1, end) infinite; }
+        @keyframes typewriter-caret { 50% { opacity: 0; } }
+        @media (prefers-reduced-motion: reduce) { #hero-headline::after { display: none; } }
         .result-count { color: var(--green-700); font-size: 12px; font-weight: 800; }
         .skeleton { overflow: hidden; border: 1px solid var(--line); border-radius: 15px; background: var(--paper); }
         .skeleton-thumb, .skeleton-line { background: linear-gradient(90deg, #edf4ef 25%, #f8fbf9 38%, #edf4ef 55%); background-size: 400% 100%; animation: shimmer 1.3s ease infinite; }
@@ -736,7 +743,7 @@
                     <div class="hero">
                         <div class="hero-copy">
                             <div class="eyebrow">Your calm streaming space</div>
-                            <h1>Watch what matters, without the noise.</h1>
+                            <h1 aria-label="Watch what matters, without the noise."><span id="hero-headline" aria-hidden="true">Watch what matters, without the noise.</span></h1>
                             <p>Keep lectures, movies, and memorable videos together in one comfortable place. Open a link, continue where you left off, and let the player do the rest. Your watch activity stays private to this browser.</p>
                             <form class="link-form" id="link-form">
                                 <input id="video-link" type="url" placeholder="Paste your video link here" autocomplete="url" aria-label="Video link">
@@ -970,6 +977,20 @@
             });
         }
         function setText(id, text) { const node = document.getElementById(id); if (node) node.textContent = text || ""; }
+        function startHeroTypewriter() {
+            const headline = document.getElementById("hero-headline");
+            const text = headline.textContent;
+            if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+            headline.textContent = "";
+            let visibleCharacters = 0;
+            const typeNextCharacter = () => {
+                if (!headline.isConnected) return;
+                visibleCharacters += 1;
+                headline.textContent = text.slice(0, visibleCharacters);
+                if (visibleCharacters < text.length) window.setTimeout(typeNextCharacter, 42);
+            };
+            window.setTimeout(typeNextCharacter, 250);
+        }
         function formatDuration(seconds) {
             if (!Number.isFinite(Number(seconds)) || Number(seconds) <= 0) return "";
             const total = Math.floor(Number(seconds)); const mins = Math.floor(total / 60); const secs = String(total % 60).padStart(2, "0");
@@ -1342,10 +1363,10 @@
             const done = isCompleted(video.id);
             const duration = formatDuration(video.duration);
             const meta = [video.category, video.subject, duration || formatDate(video.createdAt)].filter(Boolean);
+            const videoHref = video.videoUrl || `/show/${encodeURIComponent(video.id)}`;
             return `<article class="video-card" data-card-id="${escapeHtml(video.id)}">
-                <a class="video-link" href="${escapeHtml(video.videoUrl || `/show/${encodeURIComponent(video.id)}`)}">
-                    <div class="thumb"><img loading="lazy" data-video-id="${escapeHtml(video.id)}" data-thumbnail-url="${escapeHtml(video.thumbnail || "")}" data-preview-url="${escapeHtml(video.previewUrl || "")}" alt=""><span class="thumb-play">${icons.play}</span>${duration ? `<span class="thumb-duration">${escapeHtml(duration)}</span>` : ""}<button class="remove-video" data-remove="${escapeHtml(video.id)}" type="button" aria-label="Remove from your lists">${icons.remove}</button><button class="bookmark ${saved ? "saved" : ""}" data-bookmark="${escapeHtml(video.id)}" type="button" aria-label="${saved ? "Remove from watch later" : "Save for later"}">${icons.bookmark}</button></div>
-                    <div class="card-body"><h3 class="card-title">${escapeHtml(formatVideoTitle(video.title || video.fileName))}</h3><div class="card-meta">${meta.map((item, index) => `${index ? '<span class="meta-dot"></span>' : ""}<span>${escapeHtml(item)}</span>`).join("") || "<span>Video</span>"}</div>
+                <div class="thumb"><a class="video-thumb-link" href="${escapeHtml(videoHref)}" aria-label="Play ${escapeHtml(formatVideoTitle(video.title || video.fileName))}"><img loading="lazy" data-video-id="${escapeHtml(video.id)}" data-thumbnail-url="${escapeHtml(video.thumbnail || "")}" data-preview-url="${escapeHtml(video.previewUrl || "")}" alt=""><span class="thumb-play">${icons.play}</span>${duration ? `<span class="thumb-duration">${escapeHtml(duration)}</span>` : ""}</a><button class="remove-video" data-remove="${escapeHtml(video.id)}" type="button" aria-label="Remove from your lists">${icons.remove}</button><button class="bookmark ${saved ? "saved" : ""}" data-bookmark="${escapeHtml(video.id)}" type="button" aria-label="${saved ? "Remove from watch later" : "Save for later"}">${icons.bookmark}</button></div>
+                <a class="video-link" href="${escapeHtml(videoHref)}"><div class="card-body"><h3 class="card-title">${escapeHtml(formatVideoTitle(video.title || video.fileName))}</h3><div class="card-meta">${meta.map((item, index) => `${index ? '<span class="meta-dot"></span>' : ""}<span>${escapeHtml(item)}</span>`).join("") || "<span>Video</span>"}</div>
                     ${progress ? `<div class="progress-track"><div class="progress-fill" style="width:${progress}%"></div></div><div class="progress-copy"><span>${Math.round(progress)}% watched</span><span>Resume</span></div>` : done ? `<div class="progress-copy"><span>${icons.check} Completed</span></div>` : `<span class="card-action">Watch now ↗</span>`}</div>
                 </a>
                 ${video.isVideo ? `<button class="schedule-class-btn" type="button" data-schedule-video="${escapeHtml(video.id)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18M12 13v5M9.5 15.5h5"/></svg>Schedule</button>` : ""}
@@ -1851,6 +1872,12 @@
                 }
             });
             document.addEventListener("click", (event) => {
+                const card = event.target.closest(".video-card[data-card-id]");
+                if (card && !event.target.closest("a, button")) {
+                    const videoLink = card.querySelector(".video-link");
+                    if (videoLink) window.location.assign(videoLink.href);
+                    return;
+                }
                 const youtubeSuggestion = event.target.closest("[data-youtube-suggestion]");
                 if (youtubeSuggestion) {
                     chooseYoutubeSuggestion(youtubeSuggestions[Number(youtubeSuggestion.dataset.youtubeSuggestion)]);
@@ -2006,6 +2033,7 @@
             }
             renderAll();
         }
+        startHeroTypewriter();
         bindEvents(); setView(activeView, false); renderAll(); checkScheduleReminders(); loadCatalog();
     </script>
     <script src="/static/pwa-register.js" defer></script>
