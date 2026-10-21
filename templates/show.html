@@ -3248,6 +3248,7 @@
         let pomodoroAudioContext = null;
         let activeMedia = null;
         let playbackCompleted = false;
+        let hasStartedPlayback = false;
         let isProgressSeeking = false;
          let audioOnlyMode = false;
          let autoplayMuted = false;
@@ -3262,6 +3263,8 @@
         let lastTouchTapAt = 0;
         let lastTouchTapX = 0;
         let suppressTouchClickUntil = 0;
+        let centerClickTimer = null;
+        let touchTapTimer = null;
         let streamingMode = "fast";
         let liveEdgeStartedAt = 0;
         let liveEdgeStartedClock = 0;
@@ -4176,6 +4179,7 @@
 
         function setupPlayer(media) {
             activeMedia = media;
+            hasStartedPlayback = false;
              media.autoplay = false;
              media.preload = "auto";
             media.volume = Number(volumeBar.value);
@@ -4191,11 +4195,12 @@
                     media.pause();
                     return;
                 }
+                hasStartedPlayback = true;
                 loader.hidden = true;
             });
             ["waiting", "stalled"].forEach((eventName) => {
                 media.addEventListener(eventName, () => {
-                    if (activeMedia !== media) return;
+                    if (activeMedia !== media || hasStartedPlayback) return;
                     loader.textContent = media === video ? "Buffering video..." : "Buffering audio...";
                     loader.hidden = false;
                 });
@@ -4328,20 +4333,40 @@
             revealPlayerControls(1000);
             if (isDoubleTap) {
                 event.preventDefault();
-                seekBy(touch.clientX < bounds.left + bounds.width / 2 ? -10 : 10);
+                window.clearTimeout(touchTapTimer);
+                touchTapTimer = null;
+                toggleFullscreen();
                 lastTouchTapAt = 0;
                 return;
             }
             lastTouchTapAt = now;
             lastTouchTapX = touch.clientX;
+            window.clearTimeout(touchTapTimer);
+            touchTapTimer = window.setTimeout(() => {
+                touchTapTimer = null;
+                startPlayback();
+            }, 420);
         }, { passive: false });
         playerCard.addEventListener("click", (event) => {
             if (!activeMedia) return;
             if (Date.now() < suppressTouchClickUntil) return;
-            if (event.target === video || event.target === playerCard) {
-                const bounds = playerCard.getBoundingClientRect();
-                seekBy(event.clientX < bounds.left + bounds.width / 2 ? -10 : 10);
-            }
+            if (event.target.closest("button, input, a, .custom-controls, .player-overlay-top, .completion-state")) return;
+            if (event.detail !== 1) return;
+            window.clearTimeout(centerClickTimer);
+            centerClickTimer = window.setTimeout(() => {
+                centerClickTimer = null;
+                startPlayback();
+            }, 420);
+            revealPlayerControls(1000);
+        });
+        playerCard.addEventListener("dblclick", (event) => {
+            if (!activeMedia
+                || event.target.closest("button, input, a, .custom-controls, .player-overlay-top, .completion-state")
+                || Date.now() < suppressTouchClickUntil) return;
+            event.preventDefault();
+            window.clearTimeout(centerClickTimer);
+            centerClickTimer = null;
+            toggleFullscreen();
             revealPlayerControls(1000);
         });
         progressBar.oninput = () => {
