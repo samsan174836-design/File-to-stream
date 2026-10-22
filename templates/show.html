@@ -3396,7 +3396,7 @@
                  // Music mode still works for the current page if storage is unavailable.
              }
              updateMusicModeUi();
-             revealPlayerControls(3000);
+             revealPlayerControls(4000);
          }
 
          function enableSoundAfterInteraction() {
@@ -4048,7 +4048,7 @@
                 }
             }
             updateStreamModeUi();
-            revealPlayerControls(3000);
+            revealPlayerControls(4000);
         }
 
          function keepBackgroundPlayback() {
@@ -4173,7 +4173,7 @@
             }
         }
 
-        function revealPlayerControls(hideDelay = 3000) {
+        function revealPlayerControls(hideDelay = 4000) {
             playerCard.classList.remove("controls-hidden");
             clearControlsHideTimer();
             if (activeMedia && !activeMedia.ended) {
@@ -4194,17 +4194,17 @@
 
         function togglePlayerControls() {
             if (playerCard.classList.contains("controls-hidden")) {
-                revealPlayerControls(3000);
+                revealPlayerControls(4000);
             } else {
                 hidePlayerControls();
             }
         }
 
         document.addEventListener("pause", (event) => {
-            if (event.target === activeMedia) revealPlayerControls(3000);
+            if (event.target === activeMedia) revealPlayerControls(4000);
         }, true);
         document.addEventListener("play", (event) => {
-            if (event.target === activeMedia) revealPlayerControls(3000);
+            if (event.target === activeMedia) revealPlayerControls(4000);
         }, true);
 
         function setupPlayer(media) {
@@ -4354,9 +4354,9 @@
             if (event.clientX === lastMouseX && event.clientY === lastMouseY) return;
             lastMouseX = event.clientX;
             lastMouseY = event.clientY;
-            revealPlayerControls(3000);
+            revealPlayerControls(4000);
         }, { passive: true });
-        customControls.addEventListener("pointerdown", () => revealPlayerControls(3000), { passive: true });
+        customControls.addEventListener("pointerdown", () => revealPlayerControls(4000), { passive: true });
         playerCard.addEventListener("touchend", (event) => {
             const target = event.target;
             if (target.closest("button, input, a, .custom-controls, .completion-state")) return;
@@ -4370,7 +4370,7 @@
             if (isDoubleTap) {
                 event.preventDefault();
                 toggleFullscreen();
-                revealPlayerControls(3000);
+                revealPlayerControls(4000);
                 lastTouchTapAt = 0;
                 return;
             }
@@ -4390,7 +4390,7 @@
                 || Date.now() < suppressTouchClickUntil) return;
             event.preventDefault();
             toggleFullscreen();
-            revealPlayerControls(3000);
+            revealPlayerControls(4000);
         });
         progressBar.oninput = () => {
             isProgressSeeking = true;
