@@ -316,6 +316,10 @@ async def start_client(client_id, bot_token):
             in_memory=True,
         )
         register_additional_bot_handlers(client)
+        await asyncio.sleep(0)
+        handler_count = sum(len(group) for group in client.dispatcher.groups.values())
+        if handler_count == 0:
+            raise RuntimeError("Pyrogram did not register any handlers for this bot")
         client = await client.start()
         can_store, reason = await check_storage_channel_access(client)
         storage_channel_access[client.me.id] = (can_store, reason)
@@ -326,7 +330,10 @@ async def start_client(client_id, bot_token):
         work_loads[client_id] = 0
         multi_clients[client_id] = client
         username = getattr(getattr(client, "me", None), "username", None) or "unknown"
-        print(f"Additional bot {client_id} (@{username}) started successfully.")
+        print(
+            f"Additional bot {client_id} (@{username}) started successfully "
+            f"with {handler_count} message handlers."
+        )
         return True
     except FloodWait as error:
         wait_seconds = max(int(error.value) + 1, 1)
@@ -710,6 +717,27 @@ async def subscription_status_command(_, message: Message):
         quote=True,
     )
 
+
+@bot.on_message(filters.command("botstatus") & filters.private)
+async def bot_status_command(client: Client, message: Message):
+    bot_user = client.me or await client.get_me()
+    access = storage_channel_access.get(bot_user.id)
+    storage_status = (
+        "✅ Can post to shared storage"
+        if access and access[0]
+        else f"⚠️ Storage unavailable: {access[1]}"
+        if access
+        else "⚠️ Storage permission was not verified"
+    )
+    bot_name = f"@{bot_user.username}" if bot_user.username else "Bot"
+    await message.reply_text(
+        f"✅ <b>{escape(bot_name)} is receiving commands</b>\n"
+        f"Bot ID: <code>{bot_user.id}</code>\n"
+        f"{storage_status}",
+        parse_mode=enums.ParseMode.HTML,
+        quote=True,
+    )
+
 @bot.on_message(filters.command("website") & filters.private)
 async def website_login_command(_, message: Message):
     """Send a one-time secure link to the user's private web library."""
@@ -885,6 +913,7 @@ async def handle_file_upload(message: Message, user_id: int, source_bot_id: int)
 async def file_handler(client: Client, message: Message):
     if not message.from_user:
         return
+    logging.info("Media upload update received by bot_id=%s", client.me.id)
     await handle_file_upload(message, message.from_user.id, client.me.id)
 
 
@@ -901,6 +930,9 @@ def register_additional_bot_handlers(client: Client):
     )
     client.add_handler(
         MessageHandler(subscription_status_command, filters.command("status") & filters.private)
+    )
+    client.add_handler(
+        MessageHandler(bot_status_command, filters.command("botstatus") & filters.private)
     )
     client.add_handler(
         MessageHandler(website_login_command, filters.command("website") & filters.private)
