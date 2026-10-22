@@ -3040,6 +3040,23 @@
                 transition-duration: .01ms !important;
             }
         }
+        /* Auto-hide: must stay last so it wins over every earlier control style. */
+        .player-card .custom-controls,
+        .player-card .player-overlay-top,
+        .player-card .big-play {
+            transition: opacity .3s ease, visibility .3s ease;
+        }
+        .player-card.controls-hidden .custom-controls,
+        .player-card.controls-hidden .player-overlay-top,
+        .player-card.controls-hidden .big-play,
+        .player-card.controls-hidden:hover .custom-controls,
+        .player-card.controls-hidden:focus-within .custom-controls,
+        .player-card.controls-hidden:fullscreen .custom-controls,
+        .player-card.controls-hidden:-webkit-full-screen .custom-controls {
+            opacity: 0 !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
+        }
     </style>
     <link rel="stylesheet" href="/static/aurora.css?v=4">
 </head>
