@@ -17,7 +17,10 @@ class Config:
         except ValueError: STORAGE_CHANNEL = _storage_channel_str
     else: STORAGE_CHANNEL = 0
     
-    BASE_URL = os.environ.get("BASE_URL", "").rstrip('/')
+    BASE_URL = (
+        os.environ.get("BASE_URL", "").strip()
+        or os.environ.get("RENDER_EXTERNAL_URL", "").strip()
+    ).rstrip('/')
     DATABASE_URL = os.environ.get("DATABASE_URL", "")
     YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "").strip()
     REDIRECT_BLOGGER_URL = os.environ.get("REDIRECT_BLOGGER_URL", "")

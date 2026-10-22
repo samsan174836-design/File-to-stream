@@ -46,12 +46,18 @@ heroku config:set \
 ```
 
 Set each token as a separate Heroku Config Var (`MULTI_TOKEN_1`, `MULTI_TOKEN_2`,
-`MULTI_TOKEN_3`, and so on). The app reads numbered `MULTI_TOKEN_N` variables at
-startup, skips blank or duplicate tokens, and starts each additional bot as a
-download client. Do not paste bot tokens into source code, commits, or chat.
-Each additional bot must be added to the storage channel with access to its
-messages. Setting or changing Heroku Config Vars restarts the dyno; wait until
-any active Telegram FloodWait period has ended before changing them.
+`MULTI_TOKEN_3`, and so on). For older configurations, numbered `BOT_TOKEN_N`,
+`MULTI_BOT_TOKEN_N`, and `ADDITIONAL_BOT_TOKEN_N` aliases are also accepted.
+The app skips blank or duplicate tokens and reports each bot's startup and
+storage access status without logging token values. Do not paste bot tokens
+into source code, commits, or chat.
+
+Every bot that receives uploads must be an administrator in the shared storage
+channel with **Post Messages** permission. A valid token alone does not grant
+channel access. If a bot connects but lacks this permission, its `/website`
+command still works, but uploads from it are rejected with a setup message.
+Setting or changing Heroku Config Vars restarts the dyno; wait until any active
+Telegram FloodWait period has ended before changing them.
 
 `BASE_URL` must be the public HTTPS app URL and must not end with `/`.
 `YOUTUBE_API_KEY` is optional; set it to enable YouTube search. Enable the YouTube Data API v3 in Google Cloud and restrict the key to that API.

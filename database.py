@@ -109,11 +109,14 @@ class Database:
             )
             return False, existing
 
-    async def complete_link(self, unique_id, message_id):
+    async def complete_link(self, unique_id, message_id, storage_bot_id=None):
         if self.collection is not None:
+            link_fields = {"message_id": message_id, "status": "ready"}
+            if storage_bot_id is not None:
+                link_fields["storage_bot_id"] = int(storage_bot_id)
             await self.collection.update_one(
                 {"_id": unique_id},
-                {"$set": {"message_id": message_id, "status": "ready"}},
+                {"$set": link_fields},
             )
 
     async def release_link(self, unique_id):
@@ -264,6 +267,14 @@ class Database:
             return doc.get('message_id') if doc else None
         return None
 
+    async def get_link_record(self, unique_id):
+        if self.collection is None:
+            return None
+        return await self.collection.find_one(
+            {"_id": unique_id},
+            {"_id": 0, "message_id": 1, "storage_bot_id": 1, "source_message_id": 1},
+        )
+
     async def get_playback_progress(self, unique_id, client_id):
         if self.playback_progress is None or not client_id:
             return None
@@ -324,7 +335,7 @@ class Database:
             query["source_chat_id"] = user_id
         cursor = self.collection.find(
             query,
-            {"_id": 1, "message_id": 1},
+            {"_id": 1, "message_id": 1, "storage_bot_id": 1, "source_message_id": 1},
         ).sort("message_id", -1)
         if limit is not None:
             cursor = cursor.limit(limit)

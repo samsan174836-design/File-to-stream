@@ -367,9 +367,20 @@ input[type="range"].volume-bar::-webkit-slider-thumb { background: #fff6dc !impo
   padding: 14px 16px calc(12px + env(safe-area-inset-bottom)) !important;
   border: 0 !important;
   border-radius: 0 !important;
-  background: linear-gradient(180deg, transparent, rgba(0,0,0,.78) 42%, rgba(0,0,0,.94)) !important;
+  background: transparent !important;
   box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  opacity: 1 !important;
+  transition: none !important;
 }
+.player-page .player-overlay-top { transition: none !important; }
+.player-page.controls-hidden .custom-controls,
+.player-page.controls-hidden .player-overlay-top {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+.player-page.controls-hidden { cursor: default !important; }
 .player-page .controls-topline { margin: 0 0 4px !important; }
 .player-page .time-label {
   padding: 0 !important;

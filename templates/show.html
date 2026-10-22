@@ -118,10 +118,6 @@
             outline: none;
         }
 
-        .player-card #video-player {
-            filter: brightness(1.02) contrast(1.06) saturate(1.05);
-        }
-
         .player-card audio {
             position: absolute;
             width: 1px;
@@ -3716,7 +3712,7 @@
                 clearControlsHideTimer();
                 playerCard.classList.remove("controls-hidden");
                 if (activeMedia.paused && !activeMedia.ended) {
-                    revealPlayerControls(2000);
+                    revealPlayerControls(3000);
                 }
             }
             setControlIcon(playToggle, playing ? "pause" : "play");
@@ -4163,7 +4159,7 @@
             }
         }
 
-        function revealPlayerControls(hideDelay = 3500) {
+        function revealPlayerControls(hideDelay = 3000) {
             playerCard.classList.remove("controls-hidden");
             clearControlsHideTimer();
             if (activeMedia && !activeMedia.ended) {

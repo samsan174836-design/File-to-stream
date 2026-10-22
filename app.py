@@ -8,6 +8,7 @@ import traceback
 import uvicorn
 import re
 import logging
+import inspect
 import json
 import mimetypes
 import urllib.error
@@ -103,6 +104,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 templates = Jinja2Templates(directory="templates")
+
+
+def render_template(request, name, context):
+    context = {**context, "request": request}
+    parameters = inspect.signature(templates.TemplateResponse).parameters
+    if "request" in parameters:
+        return templates.TemplateResponse(request=request, name=name, context=context)
+    return templates.TemplateResponse(name, context)
+
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.add_middleware(
     CORSMiddleware,
@@ -124,6 +135,7 @@ logging.getLogger("uvicorn.access").addFilter(HideDLFilter())
 
 bot = Client("SimpleStreamBot", api_id=Config.API_ID, api_hash=Config.API_HASH, bot_token=Config.BOT_TOKEN, in_memory=True)
 multi_clients = {}; work_loads = {}; class_cache = {}; client_retry_tasks = {}
+storage_channel_access = {}
 bot_ready = False
 startup_error = None
 startup_retry_task = None
@@ -148,7 +160,10 @@ class TokenParser:
             if name == "MULTI_TOKEN":
                 token_index = 1
             else:
-                match = re.fullmatch(r"MULTI_TOKEN_?([1-9]\d*)", name)
+                match = re.fullmatch(
+                    r"(?:MULTI_(?:BOT_)?TOKEN|ADDITIONAL_BOT_TOKEN|BOT_TOKEN)_?([1-9]\d*)",
+                    name,
+                )
                 if not match:
                     continue
                 token_index = int(match.group(1))
@@ -207,6 +222,66 @@ async def get_media_message(client, message_id):
     return await asyncio.shield(fetch)
 
 
+def get_storage_client(storage_bot_id=None):
+    if storage_bot_id is not None:
+        try:
+            preferred_bot_id = int(storage_bot_id)
+        except (TypeError, ValueError):
+            preferred_bot_id = None
+        if preferred_bot_id is not None:
+            for client_id, client in multi_clients.items():
+                client_user = getattr(client, "me", None)
+                client_access = storage_channel_access.get(client_user.id) if client_user else None
+                if (
+                    client_user
+                    and client_user.id == preferred_bot_id
+                    and client.is_connected
+                    and (client_access is None or client_access[0])
+                ):
+                    return client_id, client
+
+    connected_clients = [
+        (client_id, client)
+        for client_id, client in multi_clients.items()
+        if client.is_connected
+        and (
+            storage_channel_access.get(getattr(client.me, "id", None)) is None
+            or storage_channel_access[getattr(client.me, "id", None)][0]
+        )
+    ]
+    if not connected_clients:
+        return None, None
+    return min(connected_clients, key=lambda item: work_loads.get(item[0], 0))
+
+
+def get_link_storage_bot_id(link):
+    storage_bot_id = link.get("storage_bot_id")
+    if storage_bot_id is not None:
+        return storage_bot_id
+    source_message_id = str(link.get("source_message_id", ""))
+    legacy_bot_id, separator, _ = source_message_id.partition(":")
+    return legacy_bot_id if separator and legacy_bot_id.isdigit() else None
+
+
+async def check_storage_channel_access(client):
+    try:
+        me = client.me or await client.get_me()
+        chat = await client.get_chat(Config.STORAGE_CHANNEL)
+        membership = await client.get_chat_member(Config.STORAGE_CHANNEL, me.id)
+        status_name = str(membership.status).lower()
+        if chat.type == enums.ChatType.CHANNEL:
+            if "owner" in status_name:
+                return True, ""
+            privileges = getattr(membership, "privileges", None)
+            if "administrator" not in status_name or not getattr(privileges, "can_post_messages", False):
+                return False, "make this bot an administrator with Post Messages permission in STORAGE_CHANNEL"
+        elif "left" in status_name or "banned" in status_name or "restricted" in status_name:
+            return False, "add this bot to STORAGE_CHANNEL and allow it to send messages"
+        return True, ""
+    except Exception as error:
+        return False, f"STORAGE_CHANNEL access check failed ({type(error).__name__})"
+
+
 async def retry_additional_client(client_id, bot_token, wait_seconds):
     current_task = asyncio.current_task()
     try:
@@ -229,6 +304,7 @@ async def start_client(client_id, bot_token):
     if existing_client and existing_client.is_connected:
         return True
 
+    client = None
     try:
         print(f"Attempting to start additional bot {client_id}.")
         client = Client(
@@ -241,9 +317,16 @@ async def start_client(client_id, bot_token):
         )
         register_additional_bot_handlers(client)
         client = await client.start()
+        can_store, reason = await check_storage_channel_access(client)
+        storage_channel_access[client.me.id] = (can_store, reason)
+        if can_store:
+            print(f"Additional bot {client_id} can write to the shared storage channel.")
+        else:
+            print(f"Additional bot {client_id} is connected, but uploads are disabled: {reason}.")
         work_loads[client_id] = 0
         multi_clients[client_id] = client
-        print(f"Additional bot {client_id} started successfully.")
+        username = getattr(getattr(client, "me", None), "username", None) or "unknown"
+        print(f"Additional bot {client_id} (@{username}) started successfully.")
         return True
     except FloodWait as error:
         wait_seconds = max(int(error.value) + 1, 1)
@@ -258,9 +341,16 @@ async def start_client(client_id, bot_token):
             )
         return False
     except Exception as error:
+        error_code = getattr(error, "NAME", None) or getattr(error, "ID", None)
+        if client and client.is_connected:
+            try:
+                await client.stop()
+            except Exception:
+                pass
         print(
             f"Additional bot {client_id} failed to start "
-            f"({type(error).__name__}). Check its token and channel access."
+            f"({type(error).__name__}{f', {error_code}' if error_code else ''}). "
+            "Check its token and channel access."
         )
         return False
 
@@ -646,8 +736,18 @@ async def website_login_command(_, message: Message):
     )
 
 async def handle_file_upload(message: Message, user_id: int, source_bot_id: int):
+    storage_access = storage_channel_access.get(source_bot_id)
+    if storage_access and not storage_access[0]:
+        await message.reply_text(
+            "⚠️ This bot is connected but cannot save videos yet. "
+            "Ask the owner to add it as an administrator in the storage channel "
+            "with permission to post messages.",
+            quote=True,
+        )
+        return
+
     unique_id = secrets.token_urlsafe(8)
-    source_chat_id = message.chat.id if message.chat else user_id
+    source_chat_id = user_id
     source_message_id = f"{source_bot_id}:{message.id}"
     source_key = f"{source_chat_id}:{source_message_id}"
     now = time.monotonic()
@@ -719,7 +819,7 @@ async def handle_file_upload(message: Message, user_id: int, source_bot_id: int)
             except Exception:
                 await sent_message.delete()
                 raise
-            await db.complete_link(unique_id, sent_message.id)
+            await db.complete_link(unique_id, sent_message.id, source_bot_id)
 
             if link_allowed:
                 reply_text = (
@@ -760,8 +860,22 @@ async def handle_file_upload(message: Message, user_id: int, source_bot_id: int)
         if not reply_attempted:
             recent_uploads.pop(source_key, None)
             try:
+                telegram_error = str(e).upper()
+                if any(error_code in telegram_error for error_code in (
+                    "CHAT_ADMIN_REQUIRED",
+                    "CHAT_WRITE_FORBIDDEN",
+                    "USER_BANNED_IN_CHANNEL",
+                    "CHANNEL_PRIVATE",
+                )):
+                    user_message = (
+                        "⚠️ This bot cannot save media to the shared storage channel. "
+                        "Ask the owner to add it as an administrator with permission "
+                        "to post messages."
+                    )
+                else:
+                    user_message = "Sorry, something went wrong while creating your links."
                 await message.reply_text(
-                    "Sorry, something went wrong while creating your links.",
+                    user_message,
                     quote=True,
                 )
             except Exception:
@@ -854,7 +968,12 @@ async def start_bot_with_retry():
 
         print(f"Verifying storage channel ({Config.STORAGE_CHANNEL})...")
         await bot.get_chat(Config.STORAGE_CHANNEL)
-        print("✅ Storage channel accessible hai.")
+        can_store, reason = await check_storage_channel_access(bot)
+        storage_channel_access[me.id] = (can_store, reason)
+        if can_store:
+            print("✅ Main bot can write to the shared storage channel.")
+        else:
+            print(f"⚠️ Main bot uploads are disabled: {reason}.")
 
         if Config.FORCE_SUB_CHANNEL:
             try:
@@ -909,10 +1028,10 @@ async def start_bot_with_retry():
 @app.get("/", response_class=HTMLResponse)
 async def home_page(request: Request):
     """Render the public landing page without changing individual video links."""
-    return templates.TemplateResponse(
-        request=request,
-        name="home.html",
-        context={"request": request, "bot_ready": bot_ready, "initial_view": "home"},
+    return render_template(
+        request,
+        "home.html",
+        {"bot_ready": bot_ready, "initial_view": "home"},
     )
 
 @app.get("/manifest.webmanifest", include_in_schema=False)
@@ -943,10 +1062,10 @@ async def pwa_service_worker():
 @app.get("/live-classes", response_class=HTMLResponse)
 async def library_section_page(request: Request):
     section = request.url.path.strip("/") or "home"
-    return templates.TemplateResponse(
-        request=request,
-        name="home.html",
-        context={"request": request, "bot_ready": bot_ready, "initial_view": section},
+    return render_template(
+        request,
+        "home.html",
+        {"bot_ready": bot_ready, "initial_view": section},
     )
 
 @app.get("/yt/playlist/{playlist_id}")
@@ -972,10 +1091,10 @@ async def youtube_player_page(request: Request, video_id: str):
     if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
         raise HTTPException(status_code=404, detail="Invalid YouTube video.")
     title = request.query_params.get("title", "").strip()[:200] or "YouTube video"
-    return templates.TemplateResponse(
-        request=request,
-        name="youtube.html",
-        context={"request": request, "video_id": video_id, "video_title": title},
+    return render_template(
+        request,
+        "youtube.html",
+        {"video_id": video_id, "video_title": title},
     )
 
 @app.get("/health")
@@ -1262,14 +1381,18 @@ def _catalog_category(file_name: str, mime_type: str) -> str:
         return "Audio"
     return "Entertainment"
 
-async def _catalog_item(link, main_bot, recent_cutoff, semaphore):
+async def _catalog_item(link, recent_cutoff, semaphore):
     unique_id = str(link.get("_id", ""))
     message_id = link.get("message_id")
     if not unique_id or not message_id:
         return None
+    storage_bot_id = get_link_storage_bot_id(link)
+    _, storage_client = get_storage_client(storage_bot_id)
+    if not storage_client:
+        return None
     try:
         async with semaphore:
-            message = await get_media_message(main_bot, message_id)
+            message = await get_media_message(storage_client, message_id)
         media = message.document or message.video or message.audio
         if not media:
             return None
@@ -1285,14 +1408,15 @@ async def _catalog_item(link, main_bot, recent_cutoff, semaphore):
             or mime_type.startswith("video/")
             or bool(inferred_mime_type and inferred_mime_type.startswith("video/"))
         )
+        preview_url = f"/dl/{message_id}/{quote(file_name, safe='')}"
+        if storage_bot_id is not None:
+            preview_url += f"?storage_bot_id={int(storage_bot_id)}"
         return {
             "id": unique_id,
             "title": _catalog_title(file_name),
             "fileName": file_name,
             "thumbnail": f"/thumbnail/{quote(unique_id)}",
-            "previewUrl": (
-                f"/dl/{message_id}/{quote(file_name, safe='')}" if is_video else None
-            ),
+            "previewUrl": preview_url if is_video else None,
             "videoUrl": f"/show/{quote(unique_id)}",
             "duration": getattr(media, "duration", None),
             "category": _catalog_category(file_name, mime_type),
@@ -1320,14 +1444,13 @@ async def get_catalog(request: Request):
     if not bot_ready:
         return {"status": "starting", "videos": []}
 
-    main_bot = multi_clients.get(0)
-    if not main_bot:
+    if not multi_clients:
         return {"status": "starting", "videos": []}
 
     recent_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     semaphore = asyncio.Semaphore(8)
     items = await asyncio.gather(*(
-        _catalog_item(link, main_bot, recent_cutoff, semaphore)
+        _catalog_item(link, recent_cutoff, semaphore)
         for link in await db.list_ready_links(user_id=user_id)
     ))
     videos = [item for item in items if item]
@@ -1337,7 +1460,8 @@ async def get_catalog(request: Request):
 @app.get("/thumbnail/{unique_id}")
 async def stream_thumbnail(request: Request, unique_id: str):
     """Return a cached thumbnail or fetch and cache it from Telegram."""
-    message_id = await db.get_link(unique_id)
+    link = await db.get_link_record(unique_id)
+    message_id = link.get("message_id") if link else None
     if not message_id:
         raise HTTPException(status_code=404, detail="Link expired or invalid.")
     cached_thumbnail = await db.get_thumbnail(unique_id)
@@ -1348,16 +1472,16 @@ async def stream_thumbnail(request: Request, unique_id: str):
             headers={"Cache-Control": "private, max-age=31536000, immutable"},
         )
 
-    main_bot = multi_clients.get(0)
-    if not main_bot:
+    client_id, storage_client = get_storage_client(get_link_storage_bot_id(link))
+    if not storage_client:
         raise HTTPException(status_code=503, detail="Bot is not ready.")
     last_error = None
     for attempt in range(THUMBNAIL_FETCH_ATTEMPTS):
         try:
             message = (
-                await get_media_message(main_bot, message_id)
+                await get_media_message(storage_client, message_id)
                 if attempt == 0
-                else await main_bot.get_messages(Config.STORAGE_CHANNEL, message_id)
+                else await storage_client.get_messages(Config.STORAGE_CHANNEL, message_id)
             )
             media = message.document or message.video or message.audio
             if not media:
@@ -1373,10 +1497,7 @@ async def stream_thumbnail(request: Request, unique_id: str):
                 raise HTTPException(status_code=404, detail="Thumbnail not available.")
 
             thumbnail_file_id = FileId.decode(thumb.file_id)
-            client_id = min(work_loads, key=work_loads.get)
-            client = multi_clients.get(client_id)
-            if not client:
-                raise HTTPException(status_code=503, detail="Bot is not ready.")
+            client = storage_client
             streamer = class_cache.get(client) or ByteStreamer(client)
             class_cache[client] = streamer
             size = thumb.file_size or 0
@@ -1473,11 +1594,7 @@ async def show_page(request: Request, unique_id: str):
             status_code=503,
             detail=startup_error or "Bot is not ready yet. Please try again shortly.",
         )
-    response = templates.TemplateResponse(
-        request=request,
-        name="show.html",
-        context={"request": request}
-    )
+    response = render_template(request, "show.html", {})
     if not get_playback_client_id(request):
         response.set_cookie(
             PLAYBACK_CLIENT_COOKIE,
@@ -1497,14 +1614,16 @@ def get_playback_client_id(request: Request):
 
 @app.get("/api/file/{unique_id}", response_class=JSONResponse)
 async def get_file_details_api(request: Request, unique_id: str):
-    message_id = await db.get_link(unique_id)
+    link = await db.get_link_record(unique_id)
+    message_id = link.get("message_id") if link else None
     if not message_id:
         raise HTTPException(status_code=404, detail="Link expired or invalid.")
-    main_bot = multi_clients.get(0)
-    if not main_bot:
+    storage_bot_id = get_link_storage_bot_id(link)
+    _, storage_client = get_storage_client(storage_bot_id)
+    if not storage_client:
         raise HTTPException(status_code=503, detail="Bot is not ready.")
     try:
-        message = await get_media_message(main_bot, message_id)
+        message = await get_media_message(storage_client, message_id)
     except Exception:
         raise HTTPException(status_code=404, detail="File not found on Telegram.")
     media = message.document or message.video or message.audio
@@ -1513,6 +1632,9 @@ async def get_file_details_api(request: Request, unique_id: str):
     file_name = media.file_name or "file"
     mime_type = media.mime_type or "application/octet-stream"
     stream_link = f"{Config.BASE_URL}/dl/{message_id}/{quote(file_name, safe='')}"
+    if storage_bot_id is not None:
+        stream_link += f"?storage_bot_id={int(storage_bot_id)}"
+    download_link = f"{stream_link}{'&' if '?' in stream_link else '?'}download=1"
     response_data = {
         "file_name": file_name,
         "file_size": get_readable_file_size(media.file_size),
@@ -1520,7 +1642,7 @@ async def get_file_details_api(request: Request, unique_id: str):
         "mime_type": mime_type,
         "bot_username": Config.BOT_USERNAME,
         "stream_url": stream_link,
-        "download_url": f"{stream_link}?download=1",
+        "download_url": download_link,
         "mx_player_link": f"intent:{stream_link}#Intent;action=android.intent.action.VIEW;type={mime_type};end",
         "vlc_player_link": f"intent:{stream_link}#Intent;action=android.intent.action.VIEW;type={mime_type};package=org.videolan.vlc;end"
     }
@@ -1651,10 +1773,15 @@ class ByteStreamer:
             work_loads[client_id] -= 1
 
 @app.get("/dl/{mid}/{fname}")
-async def stream_media(r:Request,mid:int,fname:str,download:bool=False):
+async def stream_media(
+    r: Request,
+    mid: int,
+    fname: str,
+    download: bool = False,
+    storage_bot_id: int | None = None,
+):
     if not work_loads: raise HTTPException(503)
-    client_id = min(work_loads, key=work_loads.get)
-    c = multi_clients.get(client_id)
+    client_id, c = get_storage_client(storage_bot_id)
     if not c: raise HTTPException(503)
     
     tc=class_cache.get(c) or ByteStreamer(c);class_cache[c]=tc
