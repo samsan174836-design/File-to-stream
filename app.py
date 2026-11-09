@@ -1213,8 +1213,10 @@ class _YoutubeApiRedirectHandler(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, resolved_url)
 
 
-def _youtube_media_id(result: dict) -> str:
+def _youtube_media_id(result: dict) -> str | None:
     media_url = result.get("media_url")
+    if media_url is None:
+        return None
     if not isinstance(media_url, str) or len(media_url) > 1024:
         raise ValueError("The video API returned an invalid media URL.")
     parsed = _validate_youtube_api_url(
@@ -1242,29 +1244,28 @@ def _fetch_youtube_stream_status(video_id: str, quality: str, status_url: str = 
         raise HTTPException(status_code=502, detail="The video stream is temporarily unavailable.") from error
 
     status = result.get("status")
-    if status == "ready":
-        actual_quality = result.get("actual_quality")
-        if isinstance(actual_quality, str) and actual_quality.isdigit():
-            actual_quality = int(actual_quality)
-        if actual_quality not in YOUTUBE_QUALITY_VALUES:
-            actual_quality = int(quality.removesuffix("p"))
-        return {
-            "status": "ready",
-            "format": "mp4",
-            "media_id": _youtube_media_id(result),
-            "actual_quality": actual_quality,
-            "fallback_quality": result.get("fallback_quality"),
-        }
-
+    if not isinstance(status, str) or not status:
+        raise ValueError("The video API returned an invalid playback status.")
     if isinstance(status, str) and status in {"failed", "error", "cancelled"}:
         message = result.get("error") or result.get("message")
         detail = message[:300] if isinstance(message, str) and message else "Video preparation failed."
         raise HTTPException(status_code=502, detail=detail)
 
     next_status_url = result.get("status_url")
-    if not isinstance(next_status_url, str):
+    if status != "ready" and (not isinstance(next_status_url, str) or not next_status_url):
         raise ValueError("The video API did not provide preparation status.")
-    _youtube_status_api_url(video_id, quality, next_status_url)
+    if next_status_url:
+        _youtube_status_api_url(video_id, quality, next_status_url)
+
+    media_id = _youtube_media_id(result)
+    actual_quality = result.get("actual_quality")
+    if isinstance(actual_quality, str) and actual_quality.isdigit():
+        actual_quality = int(actual_quality)
+    if actual_quality not in YOUTUBE_QUALITY_VALUES:
+        actual_quality = int(quality.removesuffix("p"))
+    if status == "ready" and not media_id:
+        raise ValueError("The video API did not provide a ready video stream.")
+
     progress = result.get("progress_percent", 0)
     if not isinstance(progress, (int, float)) or not math.isfinite(progress):
         progress = 0
@@ -1272,17 +1273,31 @@ def _fetch_youtube_stream_status(video_id: str, quality: str, status_url: str = 
     if not isinstance(retry_after, (int, float)) or not math.isfinite(retry_after):
         retry_after = 2
     return {
-        "status": "preparing",
+        "status": status,
+        "format": "mp4",
+        "media_id": media_id,
+        "actual_quality": actual_quality,
+        "preview_quality": result.get("preview_quality"),
+        "target_quality": result.get("target_quality"),
+        "fallback_quality": result.get("fallback_quality"),
         "progress_percent": max(0, min(100, int(progress))),
         "retry_after_seconds": max(1, min(10, int(retry_after))),
         "status_url": next_status_url,
+        "upgrade_stream_ready": bool(result.get("upgrade_stream_ready")),
+        "upgrade_error": bool(result.get("upgrade_error")),
     }
 
 
-def _open_youtube_api_media(media_id: str, range_header: str = ""):
+def _open_youtube_api_media(
+    media_id: str,
+    range_header: str = "",
+    quality_switch: int | None = None,
+):
     if not re.fullmatch(r"[a-fA-F0-9]{32}", media_id):
         raise HTTPException(status_code=400, detail="Invalid prepared video.")
     media_url = f"https://{YOUTUBE_STREAM_API_HOST}/api/watch/media/{media_id}"
+    if quality_switch is not None:
+        media_url += f"?quality_switch={quality_switch}"
     request = urllib.request.Request(
         media_url,
         headers={"User-Agent": "Mozilla/5.0"},
@@ -1327,15 +1342,25 @@ async def youtube_stream_source(video_id: str, quality: str = "1080p", status_ur
 
 
 @app.get("/api/youtube/file/{video_id}")
-async def youtube_mp4_stream(request: Request, video_id: str, media_id: str, quality: str = "1080p"):
+async def youtube_mp4_stream(
+    request: Request,
+    video_id: str,
+    media_id: str,
+    quality: str = "1080p",
+    quality_switch: int | None = None,
+):
     if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
         raise HTTPException(status_code=404, detail="Invalid YouTube video.")
     if quality not in YOUTUBE_STREAM_QUALITIES:
         raise HTTPException(status_code=400, detail="Choose a quality from 360p to 2160p.")
+    if quality_switch is not None and quality_switch < 0:
+        raise HTTPException(status_code=400, detail="Invalid quality switch token.")
     range_header = request.headers.get("Range", "")
     if range_header and not re.fullmatch(r"bytes=\d*-\d*", range_header):
         raise HTTPException(status_code=416, detail="Invalid video range.")
-    upstream = await asyncio.to_thread(_open_youtube_api_media, media_id, range_header)
+    upstream = await asyncio.to_thread(
+        _open_youtube_api_media, media_id, range_header, quality_switch
+    )
 
     def stream_body():
         try:

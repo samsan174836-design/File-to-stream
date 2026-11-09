@@ -4578,7 +4578,7 @@
             });
         }
 
-        async function loadYoutubeStream(quality, resumeTime = 0, resumePlayback = false) {
+        async function loadYoutubeStream(quality, resumeTime = 0, resumePlayback = false, autoplay = false) {
             const requestId = ++youtubeSourceRequest;
             youtubeSourceController?.abort();
             const controller = new AbortController();
@@ -4597,6 +4597,45 @@
             try {
                 let statusUrl = "";
                 let source;
+                let previewStarted = false;
+                let upgradedPlaybackStarted = false;
+                const attachSource = (mediaId, switchQuality = false, shouldPlay = false) => {
+                    const resumeAt = switchQuality && Number.isFinite(video.currentTime)
+                        ? video.currentTime
+                        : resumeTime;
+                    const continuePlayback = switchQuality
+                        ? !video.paused && !video.ended
+                        : shouldPlay;
+                    if (switchQuality) {
+                        loader.textContent = "Switching video quality...";
+                        loader.className = "player-loading";
+                        loader.hidden = false;
+                    }
+                    if (youtubeRestoreHandler) {
+                        video.removeEventListener("loadedmetadata", youtubeRestoreHandler);
+                    }
+                    youtubeRestoreHandler = () => {
+                        youtubeRestoreHandler = null;
+                        if (resumeAt > 0 && Number.isFinite(video.duration)) {
+                            video.currentTime = Math.min(resumeAt, video.duration);
+                        }
+                        if (continuePlayback) {
+                            video.play().catch(() => {
+                                loader.textContent = "Press play to start the video.";
+                                loader.hidden = false;
+                            });
+                        } else {
+                            loader.hidden = true;
+                            bigPlay.hidden = false;
+                        }
+                    };
+                    video.addEventListener("loadedmetadata", youtubeRestoreHandler, { once: true });
+                    const query = new URLSearchParams({ quality, media_id: mediaId });
+                    if (switchQuality) query.set("quality_switch", Date.now().toString());
+                    video.src = `/api/youtube/file/${encodeURIComponent(youtubeVideoId)}?${query}`;
+                    video.load();
+                };
+
                 while (true) {
                     const query = new URLSearchParams({ quality });
                     if (statusUrl) query.set("status_url", statusUrl);
@@ -4608,10 +4647,29 @@
                     if (!response.ok) throw new Error(source.detail || "The video stream is unavailable.");
                     if (requestId !== youtubeSourceRequest) return;
                     if (source.status === "ready") break;
-                    if (source.status !== "preparing" || !source.status_url) {
+                    if (!source.status_url) {
                         throw new Error("The video API returned an invalid preparation status.");
                     }
-                    loader.textContent = `Preparing ${quality} video... ${source.progress_percent}% downloaded`;
+                    if (source.media_id && !previewStarted) {
+                        attachSource(source.media_id, false, resumePlayback || autoplay);
+                        previewStarted = true;
+                        upgradedPlaybackStarted = Boolean(source.upgrade_stream_ready);
+                    }
+                    if (source.upgrade_stream_ready && previewStarted && !upgradedPlaybackStarted) {
+                        if (!source.media_id) {
+                            throw new Error("The API reported an upgraded stream without a video source.");
+                        }
+                        attachSource(source.media_id, true, resumePlayback || autoplay);
+                        upgradedPlaybackStarted = true;
+                    }
+                    if (upgradedPlaybackStarted) {
+                        loader.textContent = `Starting ${quality} stream...`;
+                    } else if (previewStarted) {
+                        const previewQuality = source.actual_quality || source.preview_quality || 360;
+                        loader.textContent = `Playing ${previewQuality}p preview; preparing ${quality}... ${source.progress_percent}%`;
+                    } else {
+                        loader.textContent = `Preparing ${quality} video... ${source.progress_percent}%`;
+                    }
                     await waitForYoutubePreparation(source.retry_after_seconds, controller.signal);
                     statusUrl = source.status_url;
                 }
@@ -4621,31 +4679,15 @@
                     youtubeQualitySelect.value = `${source.actual_quality}p`;
                     loader.textContent = `${quality} unavailable; starting ${source.actual_quality}p playback...`;
                 } else {
-                    loader.textContent = "Download complete. Starting playback...";
+                    loader.textContent = previewStarted
+                        ? "Higher-quality video ready..."
+                        : "Video ready. Starting playback...";
                 }
-
-                youtubeRestoreHandler = () => {
-                    youtubeRestoreHandler = null;
-                    if (resumeTime > 0 && Number.isFinite(video.duration)) {
-                        video.currentTime = Math.min(resumeTime, video.duration);
-                    }
-                    if (resumePlayback) {
-                        video.play().catch(() => {
-                            loader.textContent = "Press play to start the video.";
-                            loader.hidden = false;
-                        });
-                    } else {
-                        loader.hidden = true;
-                        bigPlay.hidden = false;
-                    }
-                };
-                video.addEventListener("loadedmetadata", youtubeRestoreHandler, { once: true });
-                const query = new URLSearchParams({
-                    quality,
-                    media_id: source.media_id
-                });
-                video.src = `/api/youtube/file/${encodeURIComponent(youtubeVideoId)}?${query}`;
-                video.load();
+                if (source.upgrade_error || (previewStarted && !upgradedPlaybackStarted)) {
+                    attachSource(source.media_id, true, resumePlayback || autoplay);
+                } else if (!previewStarted) {
+                    attachSource(source.media_id, false, resumePlayback || autoplay);
+                }
             } catch (error) {
                 if (error.name === "AbortError" || requestId !== youtubeSourceRequest) return;
                 console.warn("YouTube stream could not be loaded.", error);
@@ -4681,7 +4723,7 @@
                 void loadYoutubeStream(youtubeQualitySelect.value, resumeTime, resumePlayback);
             });
             playerFileHeading.hidden = false;
-            await loadYoutubeStream(youtubeQualitySelect.value);
+            await loadYoutubeStream(youtubeQualitySelect.value, 0, false, true);
         }
 
         async function loadFile() {
