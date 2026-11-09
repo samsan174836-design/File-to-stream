@@ -854,6 +854,30 @@
             gap: 7px;
             color: #dff9e8;
         }
+        .youtube-quality-control {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 6px 9px;
+            border: 1px solid rgba(230, 214, 245, .2);
+            border-radius: 999px;
+            color: #eee6f5;
+            background: rgba(255, 255, 255, .08);
+            font-size: 10px;
+            font-weight: 750;
+        }
+        .youtube-quality-control select {
+            max-width: 76px;
+            border: 0;
+            color: #fff;
+            background: transparent;
+            font: inherit;
+        }
+        .youtube-quality-control option { color: #362d40; background: #fff; }
+        @media (max-width: 520px) {
+            .youtube-quality-control { gap: 4px; padding: 5px 7px; font-size: 9px; }
+            .youtube-quality-control select { max-width: 60px; }
+        }
 
         .player-badge::before {
             width: 6px;
@@ -3103,7 +3127,23 @@
 
         <section class="player-card" id="player-card">
             <div class="player-overlay-top">
+                {% if youtube_video_id %}
+                <button class="player-badge stream-mode-toggle" id="stream-mode-toggle" type="button" hidden>YouTube stream</button>
+                {% else %}
                 <button class="player-badge stream-mode-toggle" id="stream-mode-toggle" type="button" aria-label="Switch to Live Streaming" aria-pressed="false">Fast Streaming</button>
+                {% endif %}
+                {% if youtube_video_id %}
+                <label class="youtube-quality-control">Quality
+                    <select id="youtube-quality" aria-label="Video quality">
+                        <option value="360p">360p</option>
+                        <option value="480p">480p</option>
+                        <option value="720p">720p</option>
+                        <option value="1080p" selected>1080p</option>
+                        <option value="1440p">1440p</option>
+                        <option value="2160p">2160p</option>
+                    </select>
+                </label>
+                {% endif %}
                 <span class="player-shortcut">Your Karva Bhaiya</span>
             </div>
             <div class="seek-feedback backward" id="seek-feedback-backward" aria-hidden="true">-10 sec</div>
@@ -3212,7 +3252,11 @@
     </main>
 
     <script>
-        const fileId = decodeURIComponent(window.location.pathname.split("/").pop());
+        const youtubeVideoId = {{ youtube_video_id | default("") | tojson }};
+        const youtubeVideoTitle = {{ youtube_video_title | default("") | tojson }};
+        const fileId = youtubeVideoId
+            ? `youtube-${youtubeVideoId}`
+            : decodeURIComponent(window.location.pathname.split("/").pop());
         const scheduledUrlParams = new URLSearchParams(window.location.search);
         const scheduledStartAt = Number(scheduledUrlParams.get("scheduled_start"));
         const scheduledDurationSeconds = Number(scheduledUrlParams.get("scheduled_duration"));
@@ -3240,6 +3284,7 @@
         const speedToggle = document.getElementById("speed-toggle");
         const fullscreenToggle = document.getElementById("fullscreen-toggle");
         const streamModeToggle = document.getElementById("stream-mode-toggle");
+        const youtubeQualitySelect = document.getElementById("youtube-quality");
         const seekFeedbackBackward = document.getElementById("seek-feedback-backward");
         const seekFeedbackForward = document.getElementById("seek-feedback-forward");
          const musicModeToggle = document.getElementById("music-mode-toggle");
@@ -3290,6 +3335,11 @@
         let seekFeedbackTotal = 0;
          let livePauseRequested = false;
          let backgroundPlaybackWanted = false;
+        let youtubeHlsPlayer = null;
+        let youtubeSourceRequest = 0;
+        let youtubeHlsScriptPromise = null;
+        let youtubeSourceController = null;
+        let youtubeRestoreHandler = null;
         const liveLagSeconds = 3;
         const liveEdgeIndicatorWindowSeconds = 15;
         const liveResumeDelayMs = 2000;
@@ -3790,6 +3840,7 @@
         }
 
         function syncSharedLibraryState(force = false) {
+            if (youtubeVideoId) return;
             if (!activeMedia || !Number.isFinite(activeMedia.duration) || activeMedia.duration <= 0) return;
             const now = Date.now();
             if (!force && now - lastSharedStateSave < 1200) return;
@@ -3834,7 +3885,7 @@
         }
 
         async function sendPlaybackProgress(keepalive) {
-            if (!activeMedia || !Number.isFinite(activeMedia.duration) || activeMedia.duration <= 0) return;
+            if (youtubeVideoId || !activeMedia || !Number.isFinite(activeMedia.duration) || activeMedia.duration <= 0) return;
             try {
                 const response = await fetch(
                     `/api/file/${encodeURIComponent(fileId)}/progress`,
@@ -4512,8 +4563,140 @@
             }
         });
 
+        function loadYoutubeHlsScript() {
+            if (window.Hls) return Promise.resolve();
+            if (youtubeHlsScriptPromise) return youtubeHlsScriptPromise;
+            youtubeHlsScriptPromise = new Promise((resolve, reject) => {
+                const script = document.createElement("script");
+                script.src = "https://cdn.jsdelivr.net/npm/hls.js@1.6.13/dist/hls.min.js";
+                script.onload = resolve;
+                script.onerror = () => reject(new Error("The HLS playback library could not be loaded."));
+                document.head.append(script);
+            });
+            return youtubeHlsScriptPromise;
+        }
+
+        async function loadYoutubeStream(quality, resumeTime = 0, resumePlayback = false) {
+            const requestId = ++youtubeSourceRequest;
+            youtubeSourceController?.abort();
+            youtubeSourceController = new AbortController();
+            if (youtubeRestoreHandler) {
+                video.removeEventListener("loadedmetadata", youtubeRestoreHandler);
+                youtubeRestoreHandler = null;
+            }
+            loader.textContent = `Loading ${quality} video...`;
+            loader.className = "player-loading";
+            loader.hidden = false;
+            if (youtubeHlsPlayer) {
+                youtubeHlsPlayer.destroy();
+                youtubeHlsPlayer = null;
+            }
+            video.pause();
+            video.removeAttribute("src");
+            video.load();
+
+            try {
+                const query = new URLSearchParams({ quality });
+                const response = await fetch(
+                    `/api/youtube/source/${encodeURIComponent(youtubeVideoId)}?${query}`,
+                    { signal: youtubeSourceController.signal }
+                );
+                const source = await response.json();
+                if (!response.ok) throw new Error(source.detail || "The video stream is unavailable.");
+                if (requestId !== youtubeSourceRequest) return;
+
+                youtubeRestoreHandler = () => {
+                    youtubeRestoreHandler = null;
+                    if (resumeTime > 0 && Number.isFinite(video.duration)) {
+                        video.currentTime = Math.min(resumeTime, video.duration);
+                    }
+                    if (resumePlayback) {
+                        video.play().catch(() => {
+                            loader.textContent = "Press play to start the video.";
+                            loader.hidden = false;
+                        });
+                    } else {
+                        loader.hidden = true;
+                        bigPlay.hidden = false;
+                    }
+                };
+                video.addEventListener("loadedmetadata", youtubeRestoreHandler, { once: true });
+
+                if (source.format === "mp4") {
+                    video.src = `/api/youtube/file/${encodeURIComponent(youtubeVideoId)}?${query}`;
+                    video.load();
+                    return;
+                }
+                if (source.format !== "hls") {
+                    throw new Error("The video stream format is not supported.");
+                }
+
+                if (!window.Hls) {
+                    await loadYoutubeHlsScript();
+                    if (requestId !== youtubeSourceRequest) return;
+                }
+                if (window.Hls && Hls.isSupported()) {
+                    youtubeHlsPlayer = new Hls();
+                    youtubeHlsPlayer.loadSource(`/api/youtube/stream/${encodeURIComponent(youtubeVideoId)}.m3u8?${query}`);
+                    youtubeHlsPlayer.attachMedia(video);
+                    youtubeHlsPlayer.on(Hls.Events.ERROR, (_event, data) => {
+                        if (!data.fatal || requestId !== youtubeSourceRequest) return;
+                        youtubeHlsPlayer.destroy();
+                        youtubeHlsPlayer = null;
+                        loader.className = "error";
+                        loader.textContent = "This video stream could not be loaded.";
+                        loader.hidden = false;
+                    });
+                } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+                    video.src = `/api/youtube/stream/${encodeURIComponent(youtubeVideoId)}.m3u8?${query}`;
+                    video.load();
+                } else {
+                    throw new Error("This browser does not support HLS video playback.");
+                }
+            } catch (error) {
+                if (error.name === "AbortError" || requestId !== youtubeSourceRequest) return;
+                console.warn("YouTube stream could not be loaded.", error);
+                loader.className = "error";
+                loader.textContent = error.message || "This video stream could not be loaded.";
+                loader.hidden = false;
+                bigPlay.hidden = true;
+            }
+        }
+
+        async function loadYoutubeVideo() {
+            const displayName = youtubeVideoTitle || "YouTube video";
+            document.title = `${displayName} • Karva Bhaiya`;
+            setText("file-name", displayName);
+            setText("file-size", "YouTube");
+            setText("size-card", "YouTube");
+            setText("format", "MP4 / HLS");
+            setText("file-type", "YOUTUBE");
+            setText("report-id", youtubeVideoId);
+            document.getElementById("file-name").title = displayName;
+            playerFileHeading.hidden = false;
+            content.hidden = true;
+            pomodoroPanel.hidden = false;
+            streamModeToggle.hidden = true;
+            musicModeToggle.hidden = true;
+            video.hidden = false;
+            audio.hidden = true;
+            setupPlayer(video);
+            configureMediaSession(displayName);
+            youtubeQualitySelect.addEventListener("change", () => {
+                const resumeTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+                const resumePlayback = !video.paused && !video.ended;
+                void loadYoutubeStream(youtubeQualitySelect.value, resumeTime, resumePlayback);
+            });
+            playerFileHeading.hidden = false;
+            await loadYoutubeStream(youtubeQualitySelect.value);
+        }
+
         async function loadFile() {
             try {
+                if (youtubeVideoId) {
+                    await loadYoutubeVideo();
+                    return;
+                }
                 void fetch(
                     `/api/file/${encodeURIComponent(fileId)}/progress`
                 ).then((response) => {

@@ -1116,8 +1116,11 @@ async def youtube_video_page(request: Request, video_id: str):
     title = request.query_params.get("title", "").strip()[:200] or "YouTube video"
     return render_template(
         request,
-        "youtube.html",
-        {"video_id": video_id, "video_title": title},
+        "show.html",
+        {
+            "youtube_video_id": video_id,
+            "youtube_video_title": title,
+        },
     )
 
 @app.get("/youtube/{video_id}", response_class=HTMLResponse)
@@ -1288,7 +1291,7 @@ def _open_youtube_stream_segment(upstream_url: str, range_header: str):
 
 
 @app.get("/api/youtube/stream/{video_id}.m3u8")
-async def youtube_hls_manifest(video_id: str, quality: str = "720p"):
+async def youtube_hls_manifest(video_id: str, quality: str = "1080p"):
     if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
         raise HTTPException(status_code=404, detail="Invalid YouTube video.")
     if quality not in YOUTUBE_STREAM_QUALITIES:
@@ -1306,7 +1309,7 @@ async def youtube_hls_manifest(video_id: str, quality: str = "720p"):
 
 
 @app.get("/api/youtube/source/{video_id}", response_class=JSONResponse)
-async def youtube_stream_source(video_id: str, quality: str = "720p"):
+async def youtube_stream_source(video_id: str, quality: str = "1080p"):
     if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
         raise HTTPException(status_code=404, detail="Invalid YouTube video.")
     if quality not in YOUTUBE_STREAM_QUALITIES:
@@ -1320,7 +1323,7 @@ async def youtube_stream_source(video_id: str, quality: str = "720p"):
 
 
 @app.get("/api/youtube/file/{video_id}")
-async def youtube_mp4_stream(request: Request, video_id: str, quality: str = "720p"):
+async def youtube_mp4_stream(request: Request, video_id: str, quality: str = "1080p"):
     if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
         raise HTTPException(status_code=404, detail="Invalid YouTube video.")
     if quality not in YOUTUBE_STREAM_QUALITIES:
