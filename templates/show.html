@@ -4583,16 +4583,20 @@
             youtubeSourceController?.abort();
             const controller = new AbortController();
             youtubeSourceController = controller;
+            const preserveCurrentSource = Boolean(video.currentSrc);
+            const keepCurrentPlayback = preserveCurrentSource && !video.paused && !video.ended;
             if (youtubeRestoreHandler) {
                 video.removeEventListener("loadedmetadata", youtubeRestoreHandler);
                 youtubeRestoreHandler = null;
             }
             loader.textContent = `Preparing ${quality} video...`;
             loader.className = "player-loading";
-            loader.hidden = false;
-            video.pause();
-            video.removeAttribute("src");
-            video.load();
+            loader.hidden = keepCurrentPlayback;
+            if (!preserveCurrentSource) {
+                video.pause();
+                video.removeAttribute("src");
+                video.load();
+            }
 
             try {
                 let statusUrl = "";
@@ -4607,7 +4611,7 @@
                         ? video.currentTime
                         : resumeTime;
                     const continuePlayback = switchQuality
-                        ? !video.paused && !video.ended
+                        ? shouldPlay || (!video.paused && !video.ended)
                         : shouldPlay;
                     const playImmediately = !switchQuality && shouldPlay;
                     if (switchQuality && Number.isFinite(video.currentTime)) {
