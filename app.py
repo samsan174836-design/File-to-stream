@@ -1132,40 +1132,9 @@ async def youtube_player_page(request: Request, video_id: str):
         status_code=307,
     )
 
-def _is_youtube_stream_url(url: str) -> bool:
-    try:
-        parsed = urllib.parse.urlsplit(url)
-        hostname = (parsed.hostname or "").lower()
-        return (
-            parsed.scheme == "https"
-            and (hostname == "googlevideo.com" or hostname.endswith(".googlevideo.com"))
-            and parsed.port in (None, 443)
-            and parsed.username is None
-            and parsed.password is None
-            and parsed.path.startswith("/videoplayback/")
-        )
-    except ValueError:
-        return False
-
-
-class _YoutubeStreamRedirectHandler(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        resolved_url = urllib.parse.urljoin(req.full_url, newurl)
-        if not _is_youtube_stream_url(resolved_url):
-            raise urllib.error.HTTPError(
-                resolved_url, code, "Untrusted video stream redirect", headers, fp
-            )
-        return super().redirect_request(req, fp, code, msg, headers, resolved_url)
-
-
-def _youtube_segment_proxy_url(upstream_url: str) -> str:
-    if not _is_youtube_stream_url(upstream_url):
-        raise ValueError("The video stream contains an unsupported URL.")
-    return f"/api/youtube/segment?url={quote(upstream_url, safe='')}"
-
-
 YOUTUBE_STREAM_QUALITIES = frozenset({"360p", "480p", "720p", "1080p", "1440p", "2160p"})
 YOUTUBE_STREAM_API_HOST = "apiyt-ca9e83c98352.herokuapp.com"
+YOUTUBE_QUALITY_VALUES = frozenset({360, 480, 720, 1080, 1440, 2160})
 
 
 def _youtube_stream_api_url(video_id: str, quality: str) -> str:
@@ -1176,7 +1145,52 @@ def _youtube_stream_api_url(video_id: str, quality: str) -> str:
     return f"https://{YOUTUBE_STREAM_API_HOST}/api/watch?" + urllib.parse.urlencode({
         "url": f"https://www.youtube.com/watch?v={video_id}",
         "quality": quality,
+        "format": "json",
     })
+
+
+def _validate_youtube_api_url(url: str, path: str | None = None) -> urllib.parse.SplitResult:
+    parsed = urllib.parse.urlsplit(url)
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != YOUTUBE_STREAM_API_HOST
+        or parsed.port not in (None, 443)
+        or parsed.username is not None
+        or parsed.password is not None
+        or (path is not None and parsed.path != path)
+    ):
+        raise ValueError("The video API returned an unsupported URL.")
+    return parsed
+
+
+def _youtube_status_api_url(video_id: str, quality: str, status_url: str) -> str:
+    if len(status_url) > 4096:
+        raise ValueError("Invalid video preparation status URL.")
+    parsed = _validate_youtube_api_url(
+        urllib.parse.urljoin(f"https://{YOUTUBE_STREAM_API_HOST}/", status_url),
+        "/api/watch/status",
+    )
+    query = urllib.parse.parse_qs(parsed.query)
+    expected_video_url = f"https://www.youtube.com/watch?v={video_id}"
+    if query.get("url") != [expected_video_url] or query.get("quality") != [quality]:
+        raise ValueError("The video API returned an invalid status URL.")
+    return urllib.parse.urlunsplit(parsed)
+
+
+def _youtube_api_json(api_url: str) -> dict:
+    request = urllib.request.Request(
+        api_url,
+        headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"},
+    )
+    opener = urllib.request.build_opener(_YoutubeApiRedirectHandler())
+    with opener.open(request, timeout=30) as response:
+        body = response.read(1024 * 1024 + 1)
+    if len(body) > 1024 * 1024:
+        raise ValueError("The video API response is too large.")
+    result = json.loads(body)
+    if not isinstance(result, dict):
+        raise ValueError("The video API returned an invalid response.")
+    return result
 
 
 class _YoutubeApiRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -1199,9 +1213,78 @@ class _YoutubeApiRedirectHandler(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, resolved_url)
 
 
-def _open_youtube_api_stream(video_id: str, quality: str, range_header: str = ""):
+def _youtube_media_id(result: dict) -> str:
+    media_url = result.get("media_url")
+    if not isinstance(media_url, str) or len(media_url) > 1024:
+        raise ValueError("The video API returned an invalid media URL.")
+    parsed = _validate_youtube_api_url(
+        urllib.parse.urljoin(f"https://{YOUTUBE_STREAM_API_HOST}/", media_url),
+    )
+    match = re.fullmatch(r"/api/watch/media/([a-fA-F0-9]{32})", parsed.path)
+    if not match:
+        raise ValueError("The video API returned an invalid media URL.")
+    return match.group(1)
+
+
+def _fetch_youtube_stream_status(video_id: str, quality: str, status_url: str = "") -> dict:
+    api_url = (
+        _youtube_status_api_url(video_id, quality, status_url)
+        if status_url
+        else _youtube_stream_api_url(video_id, quality)
+    )
+    try:
+        result = _youtube_api_json(api_url)
+    except urllib.error.HTTPError as error:
+        logging.warning("YouTube stream API returned HTTP %s", error.code)
+        raise HTTPException(status_code=502, detail="The video stream is temporarily unavailable.") from error
+    except (urllib.error.URLError, OSError) as error:
+        logging.warning("YouTube stream API request failed: %s", type(error).__name__)
+        raise HTTPException(status_code=502, detail="The video stream is temporarily unavailable.") from error
+
+    status = result.get("status")
+    if status == "ready":
+        actual_quality = result.get("actual_quality")
+        if isinstance(actual_quality, str) and actual_quality.isdigit():
+            actual_quality = int(actual_quality)
+        if actual_quality not in YOUTUBE_QUALITY_VALUES:
+            actual_quality = int(quality.removesuffix("p"))
+        return {
+            "status": "ready",
+            "format": "mp4",
+            "media_id": _youtube_media_id(result),
+            "actual_quality": actual_quality,
+            "fallback_quality": result.get("fallback_quality"),
+        }
+
+    if isinstance(status, str) and status in {"failed", "error", "cancelled"}:
+        message = result.get("error") or result.get("message")
+        detail = message[:300] if isinstance(message, str) and message else "Video preparation failed."
+        raise HTTPException(status_code=502, detail=detail)
+
+    next_status_url = result.get("status_url")
+    if not isinstance(next_status_url, str):
+        raise ValueError("The video API did not provide preparation status.")
+    _youtube_status_api_url(video_id, quality, next_status_url)
+    progress = result.get("progress_percent", 0)
+    if not isinstance(progress, (int, float)) or not math.isfinite(progress):
+        progress = 0
+    retry_after = result.get("retry_after_seconds", 2)
+    if not isinstance(retry_after, (int, float)) or not math.isfinite(retry_after):
+        retry_after = 2
+    return {
+        "status": "preparing",
+        "progress_percent": max(0, min(100, int(progress))),
+        "retry_after_seconds": max(1, min(10, int(retry_after))),
+        "status_url": next_status_url,
+    }
+
+
+def _open_youtube_api_media(media_id: str, range_header: str = ""):
+    if not re.fullmatch(r"[a-fA-F0-9]{32}", media_id):
+        raise HTTPException(status_code=400, detail="Invalid prepared video.")
+    media_url = f"https://{YOUTUBE_STREAM_API_HOST}/api/watch/media/{media_id}"
     request = urllib.request.Request(
-        _youtube_stream_api_url(video_id, quality),
+        media_url,
         headers={"User-Agent": "Mozilla/5.0"},
     )
     if range_header:
@@ -1222,108 +1305,29 @@ def _open_youtube_api_stream(video_id: str, quality: str, range_header: str = ""
         raise HTTPException(status_code=502, detail="The video stream is temporarily unavailable.") from error
 
 
-def _detect_youtube_stream_format(video_id: str, quality: str) -> str:
-    response = _open_youtube_api_stream(video_id, quality, "bytes=0-31")
-    try:
-        sample = response.read(32)
-        content_type = response.headers.get_content_type().lower()
-        if content_type == "video/mp4" or b"ftyp" in sample[:16]:
-            return "mp4"
-        if content_type in ("application/vnd.apple.mpegurl", "application/x-mpegurl"):
-            return "hls"
-        if sample.startswith(b"#EXTM3U"):
-            return "hls"
-    finally:
-        response.close()
-    raise ValueError("The video stream API returned an unsupported format.")
-
-
-def _fetch_youtube_hls_manifest(video_id: str, quality: str) -> str:
-    with _open_youtube_api_stream(video_id, quality) as response:
-        manifest_bytes = response.read(2 * 1024 * 1024 + 1)
-    if len(manifest_bytes) > 2 * 1024 * 1024:
-        raise ValueError("The video stream manifest is too large.")
-    manifest = manifest_bytes.decode("utf-8-sig")
-    if not manifest.startswith("#EXTM3U"):
-        raise ValueError("The video stream API returned an invalid manifest.")
-
-    rewritten_lines = []
-    for line in manifest.splitlines():
-        if line.startswith("https://"):
-            line = _youtube_segment_proxy_url(line)
-        else:
-            line = re.sub(
-                r'URI="([^"]+)"',
-                lambda match: f'URI="{_youtube_segment_proxy_url(match.group(1))}"',
-                line,
-            )
-        rewritten_lines.append(line)
-    return "\n".join(rewritten_lines) + "\n"
-
-
-def _stream_youtube_mp4(video_id: str, quality: str, range_header: str):
-    return _open_youtube_api_stream(video_id, quality, range_header)
-
-
-def _open_youtube_stream_segment(upstream_url: str, range_header: str):
-    if not _is_youtube_stream_url(upstream_url):
-        raise HTTPException(status_code=400, detail="Invalid video stream URL.")
-    request = urllib.request.Request(
-        upstream_url,
-        headers={"User-Agent": "Mozilla/5.0"},
-    )
-    if range_header:
-        request.add_header("Range", range_header)
-    opener = urllib.request.build_opener(_YoutubeStreamRedirectHandler())
-    try:
-        return opener.open(request, timeout=30)
-    except urllib.error.HTTPError as error:
-        if error.code == 416:
-            raise HTTPException(
-                status_code=416,
-                headers={"Content-Range": error.headers.get("Content-Range", "bytes */*")},
-            ) from error
-        logging.warning("YouTube stream returned HTTP %s", error.code)
-        raise HTTPException(status_code=502, detail="The video stream is temporarily unavailable.") from error
-    except (urllib.error.URLError, OSError) as error:
-        logging.warning("YouTube stream request failed: %s", type(error).__name__)
-        raise HTTPException(status_code=502, detail="The video stream is temporarily unavailable.") from error
-
-
-@app.get("/api/youtube/stream/{video_id}.m3u8")
-async def youtube_hls_manifest(video_id: str, quality: str = "1080p"):
-    if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
-        raise HTTPException(status_code=404, detail="Invalid YouTube video.")
-    if quality not in YOUTUBE_STREAM_QUALITIES:
-        raise HTTPException(status_code=400, detail="Choose a quality from 360p to 2160p.")
-    try:
-        manifest = await asyncio.to_thread(_fetch_youtube_hls_manifest, video_id, quality)
-    except (urllib.error.HTTPError, urllib.error.URLError, OSError, UnicodeDecodeError, ValueError) as error:
-        logging.warning("YouTube stream manifest request failed: %s", type(error).__name__)
-        raise HTTPException(status_code=502, detail="The video stream is temporarily unavailable.") from error
-    return StreamingResponse(
-        iter([manifest]),
-        media_type="application/vnd.apple.mpegurl",
-        headers={"Cache-Control": "no-store"},
-    )
-
-
 @app.get("/api/youtube/source/{video_id}", response_class=JSONResponse)
-async def youtube_stream_source(video_id: str, quality: str = "1080p"):
+async def youtube_stream_source(video_id: str, quality: str = "1080p", status_url: str = ""):
     if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
         raise HTTPException(status_code=404, detail="Invalid YouTube video.")
     if quality not in YOUTUBE_STREAM_QUALITIES:
         raise HTTPException(status_code=400, detail="Choose a quality from 360p to 2160p.")
+    if status_url:
+        try:
+            _youtube_status_api_url(video_id, quality, status_url)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
     try:
-        stream_format = await asyncio.to_thread(_detect_youtube_stream_format, video_id, quality)
-    except (urllib.error.HTTPError, urllib.error.URLError, OSError, ValueError) as error:
-        logging.warning("YouTube stream format detection failed: %s", type(error).__name__)
+        return await asyncio.to_thread(_fetch_youtube_stream_status, video_id, quality, status_url)
+    except ValueError as error:
+        logging.warning("YouTube stream API returned an invalid response: %s", type(error).__name__)
         raise HTTPException(status_code=502, detail="The video stream is temporarily unavailable.") from error
-    return {"format": stream_format}
+    except (urllib.error.HTTPError, urllib.error.URLError, OSError) as error:
+        logging.warning("YouTube stream preparation failed: %s", type(error).__name__)
+        raise HTTPException(status_code=502, detail="The video stream is temporarily unavailable.") from error
 
 
 @app.get("/api/youtube/file/{video_id}")
-async def youtube_mp4_stream(request: Request, video_id: str, quality: str = "1080p"):
+async def youtube_mp4_stream(request: Request, video_id: str, media_id: str, quality: str = "1080p"):
     if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
         raise HTTPException(status_code=404, detail="Invalid YouTube video.")
     if quality not in YOUTUBE_STREAM_QUALITIES:
@@ -1331,36 +1335,7 @@ async def youtube_mp4_stream(request: Request, video_id: str, quality: str = "10
     range_header = request.headers.get("Range", "")
     if range_header and not re.fullmatch(r"bytes=\d*-\d*", range_header):
         raise HTTPException(status_code=416, detail="Invalid video range.")
-    upstream = await asyncio.to_thread(_stream_youtube_mp4, video_id, quality, range_header)
-
-    def stream_body():
-        try:
-            while chunk := upstream.read(64 * 1024):
-                yield chunk
-        finally:
-            upstream.close()
-
-    headers = {"Cache-Control": "no-store", "Accept-Ranges": "bytes"}
-    for name in ("Content-Length", "Content-Range"):
-        value = upstream.headers.get(name)
-        if value:
-            headers[name] = value
-    return StreamingResponse(
-        stream_body(),
-        status_code=upstream.status,
-        media_type=upstream.headers.get_content_type(),
-        headers=headers,
-    )
-
-
-@app.get("/api/youtube/segment")
-async def youtube_hls_segment(request: Request, url: str):
-    if len(url) > 8192 or not _is_youtube_stream_url(url):
-        raise HTTPException(status_code=400, detail="Invalid video stream URL.")
-    range_header = request.headers.get("Range", "")
-    if range_header and not re.fullmatch(r"bytes=\d*-\d*", range_header):
-        raise HTTPException(status_code=416, detail="Invalid video range.")
-    upstream = await asyncio.to_thread(_open_youtube_stream_segment, url, range_header)
+    upstream = await asyncio.to_thread(_open_youtube_api_media, media_id, range_header)
 
     def stream_body():
         try:

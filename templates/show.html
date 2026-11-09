@@ -3335,9 +3335,7 @@
         let seekFeedbackTotal = 0;
          let livePauseRequested = false;
          let backgroundPlaybackWanted = false;
-        let youtubeHlsPlayer = null;
         let youtubeSourceRequest = 0;
-        let youtubeHlsScriptPromise = null;
         let youtubeSourceController = null;
         let youtubeRestoreHandler = null;
         const liveLagSeconds = 3;
@@ -4563,47 +4561,68 @@
             }
         });
 
-        function loadYoutubeHlsScript() {
-            if (window.Hls) return Promise.resolve();
-            if (youtubeHlsScriptPromise) return youtubeHlsScriptPromise;
-            youtubeHlsScriptPromise = new Promise((resolve, reject) => {
-                const script = document.createElement("script");
-                script.src = "https://cdn.jsdelivr.net/npm/hls.js@1.6.13/dist/hls.min.js";
-                script.onload = resolve;
-                script.onerror = () => reject(new Error("The HLS playback library could not be loaded."));
-                document.head.append(script);
+        function waitForYoutubePreparation(seconds, signal) {
+            return new Promise((resolve, reject) => {
+                const finish = () => {
+                    signal.removeEventListener("abort", abort);
+                    resolve();
+                };
+                const timer = window.setTimeout(finish, seconds * 1000);
+                const abort = () => {
+                    window.clearTimeout(timer);
+                    signal.removeEventListener("abort", abort);
+                    reject(new DOMException("The request was aborted.", "AbortError"));
+                };
+                signal.addEventListener("abort", abort, { once: true });
+                if (signal.aborted) abort();
             });
-            return youtubeHlsScriptPromise;
         }
 
         async function loadYoutubeStream(quality, resumeTime = 0, resumePlayback = false) {
             const requestId = ++youtubeSourceRequest;
             youtubeSourceController?.abort();
-            youtubeSourceController = new AbortController();
+            const controller = new AbortController();
+            youtubeSourceController = controller;
             if (youtubeRestoreHandler) {
                 video.removeEventListener("loadedmetadata", youtubeRestoreHandler);
                 youtubeRestoreHandler = null;
             }
-            loader.textContent = `Loading ${quality} video...`;
+            loader.textContent = `Preparing ${quality} video...`;
             loader.className = "player-loading";
             loader.hidden = false;
-            if (youtubeHlsPlayer) {
-                youtubeHlsPlayer.destroy();
-                youtubeHlsPlayer = null;
-            }
             video.pause();
             video.removeAttribute("src");
             video.load();
 
             try {
-                const query = new URLSearchParams({ quality });
-                const response = await fetch(
-                    `/api/youtube/source/${encodeURIComponent(youtubeVideoId)}?${query}`,
-                    { signal: youtubeSourceController.signal }
-                );
-                const source = await response.json();
-                if (!response.ok) throw new Error(source.detail || "The video stream is unavailable.");
+                let statusUrl = "";
+                let source;
+                while (true) {
+                    const query = new URLSearchParams({ quality });
+                    if (statusUrl) query.set("status_url", statusUrl);
+                    const response = await fetch(
+                        `/api/youtube/source/${encodeURIComponent(youtubeVideoId)}?${query}`,
+                        { signal: controller.signal }
+                    );
+                    source = await response.json();
+                    if (!response.ok) throw new Error(source.detail || "The video stream is unavailable.");
+                    if (requestId !== youtubeSourceRequest) return;
+                    if (source.status === "ready") break;
+                    if (source.status !== "preparing" || !source.status_url) {
+                        throw new Error("The video API returned an invalid preparation status.");
+                    }
+                    loader.textContent = `Preparing ${quality} video... ${source.progress_percent}% downloaded`;
+                    await waitForYoutubePreparation(source.retry_after_seconds, controller.signal);
+                    statusUrl = source.status_url;
+                }
+
                 if (requestId !== youtubeSourceRequest) return;
+                if (source.actual_quality && source.actual_quality !== Number(quality.replace("p", ""))) {
+                    youtubeQualitySelect.value = `${source.actual_quality}p`;
+                    loader.textContent = `${quality} unavailable; starting ${source.actual_quality}p playback...`;
+                } else {
+                    loader.textContent = "Download complete. Starting playback...";
+                }
 
                 youtubeRestoreHandler = () => {
                     youtubeRestoreHandler = null;
@@ -4621,38 +4640,12 @@
                     }
                 };
                 video.addEventListener("loadedmetadata", youtubeRestoreHandler, { once: true });
-
-                if (source.format === "mp4") {
-                    video.src = `/api/youtube/file/${encodeURIComponent(youtubeVideoId)}?${query}`;
-                    video.load();
-                    return;
-                }
-                if (source.format !== "hls") {
-                    throw new Error("The video stream format is not supported.");
-                }
-
-                if (!window.Hls) {
-                    await loadYoutubeHlsScript();
-                    if (requestId !== youtubeSourceRequest) return;
-                }
-                if (window.Hls && Hls.isSupported()) {
-                    youtubeHlsPlayer = new Hls();
-                    youtubeHlsPlayer.loadSource(`/api/youtube/stream/${encodeURIComponent(youtubeVideoId)}.m3u8?${query}`);
-                    youtubeHlsPlayer.attachMedia(video);
-                    youtubeHlsPlayer.on(Hls.Events.ERROR, (_event, data) => {
-                        if (!data.fatal || requestId !== youtubeSourceRequest) return;
-                        youtubeHlsPlayer.destroy();
-                        youtubeHlsPlayer = null;
-                        loader.className = "error";
-                        loader.textContent = "This video stream could not be loaded.";
-                        loader.hidden = false;
-                    });
-                } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-                    video.src = `/api/youtube/stream/${encodeURIComponent(youtubeVideoId)}.m3u8?${query}`;
-                    video.load();
-                } else {
-                    throw new Error("This browser does not support HLS video playback.");
-                }
+                const query = new URLSearchParams({
+                    quality,
+                    media_id: source.media_id
+                });
+                video.src = `/api/youtube/file/${encodeURIComponent(youtubeVideoId)}?${query}`;
+                video.load();
             } catch (error) {
                 if (error.name === "AbortError" || requestId !== youtubeSourceRequest) return;
                 console.warn("YouTube stream could not be loaded.", error);
@@ -4669,7 +4662,7 @@
             setText("file-name", displayName);
             setText("file-size", "YouTube");
             setText("size-card", "YouTube");
-            setText("format", "MP4 / HLS");
+            setText("format", "MP4");
             setText("file-type", "YOUTUBE");
             setText("report-id", youtubeVideoId);
             document.getElementById("file-name").title = displayName;
