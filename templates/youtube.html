@@ -76,11 +76,11 @@
     <main class="page">
         <a class="back-link" href="/home#study">← Back to YouTube search</a>
         <h1>{{ video_title }}</h1>
-        <section class="player-shell" aria-label="YouTube video player">
+        <section class="player-shell" aria-label="Video player">
             <div class="video-frame">
-                <div id="youtube-player"></div>
+                <video id="youtube-player" controls playsinline preload="metadata"></video>
                 <div class="player-message" id="player-message" role="status" aria-live="polite">
-                    <p id="message-copy">Loading YouTube player…</p>
+                    <p id="message-copy">Loading video stream…</p>
                     <a class="external-link" id="fallback-link" href="https://www.yout-ube.com/watch?v={{ video_id }}" target="_blank" rel="noopener noreferrer" hidden>Open on YouTube</a>
                 </div>
             </div>
@@ -93,9 +93,10 @@
         const playerMessage = document.getElementById("player-message");
         const messageCopy = document.getElementById("message-copy");
         const fallbackLink = document.getElementById("fallback-link");
-        let player;
-        let availableSpeeds = [1];
+        const player = document.getElementById("youtube-player");
+        const playbackSpeeds = [1, 1.25, 1.5, 1.75, 2];
         let currentSpeedIndex = 0;
+        let hls;
 
         function showMessage(message, showFallback = false) {
             messageCopy.textContent = message;
@@ -103,69 +104,59 @@
             playerMessage.hidden = false;
         }
 
-        function enableControls() {
-            player.getIframe().tabIndex = -1;
-            availableSpeeds = player.getAvailablePlaybackRates().filter((rate) => rate > 0);
-            if (!availableSpeeds.length) availableSpeeds = [1];
-            currentSpeedIndex = Math.max(0, availableSpeeds.indexOf(player.getPlaybackRate()));
-            playerMessage.hidden = true;
-        }
-
-        function updatePlayerUi() {
-            if (!player || typeof player.getPlayerState !== "function") return;
-            const state = player.getPlayerState();
-            if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.PAUSED) {
-                playerMessage.hidden = true;
+        function togglePlayback() {
+            if (player.paused) {
+                player.play().catch(() => showMessage("The video could not be played. Try opening it on YouTube.", true));
+            } else {
+                player.pause();
             }
         }
 
-        function togglePlayback() {
-            if (!player) return;
-            if (player.getPlayerState() === YT.PlayerState.PLAYING) player.pauseVideo();
-            else player.playVideo();
-        }
-
         function seekBy(seconds) {
-            if (!player) return;
-            const total = player.getDuration();
-            const nextTime = Math.max(0, Math.min(total, player.getCurrentTime() + seconds));
-            player.seekTo(nextTime, true);
-            updatePlayerUi();
+            if (!Number.isFinite(player.duration)) return;
+            player.currentTime = Math.max(0, Math.min(player.duration, player.currentTime + seconds));
         }
 
         function cycleSpeed() {
-            if (!player || availableSpeeds.length < 2) return;
-            currentSpeedIndex = (currentSpeedIndex + 1) % availableSpeeds.length;
-            player.setPlaybackRate(availableSpeeds[currentSpeedIndex]);
+            currentSpeedIndex = (currentSpeedIndex + 1) % playbackSpeeds.length;
+            player.playbackRate = playbackSpeeds[currentSpeedIndex];
         }
 
-        window.onYouTubeIframeAPIReady = () => {
-            player = new YT.Player("youtube-player", {
-                videoId,
-                playerVars: {
-                    autoplay: 0,
-                    controls: 1,
-                    enablejsapi: 1,
-                    fs: 1,
-                    playsinline: 1,
-                    rel: 0,
-                    origin: window.location.origin
-                },
-                events: {
-                    onReady: enableControls,
-                    onStateChange: updatePlayerUi,
-                    onError: (event) => {
-                        const message = event.data === 101 || event.data === 150
-                            ? "This video owner does not allow playback on other websites."
-                            : "The YouTube video could not be played here.";
-                        showMessage(`${message} You can still open it directly on YouTube.`, true);
+        player.addEventListener("playing", () => { playerMessage.hidden = true; });
+        player.addEventListener("loadedmetadata", () => { playerMessage.hidden = true; });
+        player.addEventListener("error", () => {
+            showMessage("The video stream could not be loaded. You can still open it directly on YouTube.", true);
+        });
+
+        function startNativePlayback() {
+            if (!player.canPlayType("application/vnd.apple.mpegurl")) {
+                showMessage("HLS playback is unavailable in this browser. You can still open the video on YouTube.", true);
+                return;
+            }
+            player.src = `/api/youtube/stream/${encodeURIComponent(videoId)}.m3u8`;
+            player.load();
+        }
+
+        function startPlayback() {
+            if (window.Hls && Hls.isSupported()) {
+                hls = new Hls();
+                hls.loadSource(`/api/youtube/stream/${encodeURIComponent(videoId)}.m3u8`);
+                hls.attachMedia(player);
+                hls.on(Hls.Events.MANIFEST_PARSED, () => { playerMessage.hidden = true; });
+                hls.on(Hls.Events.ERROR, (_event, data) => {
+                    if (data.fatal) {
+                        hls.destroy();
+                        showMessage("The video stream could not be loaded. You can still open it directly on YouTube.", true);
                     }
-                }
-            });
-        };
+                });
+            } else if (player.canPlayType("application/vnd.apple.mpegurl")) {
+                startNativePlayback();
+            } else {
+                showMessage("This browser does not support HLS video playback. Try a browser with HLS support or open the video on YouTube.", true);
+            }
+        }
 
         document.addEventListener("keydown", (event) => {
-            if (!player) return;
             const target = event.target;
             if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement
                 || target instanceof HTMLSelectElement || target.isContentEditable) return;
@@ -178,11 +169,10 @@
             if (key === " " || key === "k") togglePlayback();
             else if (key === "arrowleft") seekBy(-10);
             else if (key === "arrowright") seekBy(10);
-            else if (key === "arrowup") player.setVolume(Math.min(100, player.getVolume() + 5));
-            else if (key === "arrowdown") player.setVolume(Math.max(0, player.getVolume() - 5));
+            else if (key === "arrowup") player.volume = Math.min(1, player.volume + 0.05);
+            else if (key === "arrowdown") player.volume = Math.max(0, player.volume - 0.05);
             else if (key === "m") {
-                if (player.isMuted()) player.unMute();
-                else player.mute();
+                player.muted = !player.muted;
             } else if (key === "s") cycleSpeed();
             else if (key === "f") {
                 const frame = document.querySelector(".video-frame");
@@ -191,10 +181,11 @@
             }
         });
 
-        const apiScript = document.createElement("script");
-        apiScript.src = "https://www.youtube.com/iframe_api";
-        apiScript.onerror = () => showMessage("The YouTube player could not be loaded. Check your connection and try opening the video on YouTube.", true);
-        document.head.append(apiScript);
+        const hlsScript = document.createElement("script");
+        hlsScript.src = "https://cdn.jsdelivr.net/npm/hls.js@1.6.13/dist/hls.min.js";
+        hlsScript.onload = startPlayback;
+        hlsScript.onerror = startNativePlayback;
+        document.head.append(hlsScript);
     </script>
     <script src="/static/aurora.js?v=2" defer></script>
 </body>

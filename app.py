@@ -1110,16 +1110,7 @@ async def youtube_playlist_page(playlist_id: str):
     )
 
 @app.get("/yt/{video_id}")
-async def youtube_video_page(video_id: str):
-    if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
-        raise HTTPException(status_code=404, detail="Invalid YouTube video.")
-    return RedirectResponse(
-        url=f"https://www.yout-ube.com/watch?v={quote(video_id)}",
-        status_code=307,
-    )
-
-@app.get("/youtube/{video_id}", response_class=HTMLResponse)
-async def youtube_player_page(request: Request, video_id: str):
+async def youtube_video_page(request: Request, video_id: str):
     if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
         raise HTTPException(status_code=404, detail="Invalid YouTube video.")
     title = request.query_params.get("title", "").strip()[:200] or "YouTube video"
@@ -1127,6 +1118,148 @@ async def youtube_player_page(request: Request, video_id: str):
         request,
         "youtube.html",
         {"video_id": video_id, "video_title": title},
+    )
+
+@app.get("/youtube/{video_id}", response_class=HTMLResponse)
+async def youtube_player_page(request: Request, video_id: str):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
+        raise HTTPException(status_code=404, detail="Invalid YouTube video.")
+    return RedirectResponse(
+        url=f"/yt/{quote(video_id)}?{urllib.parse.urlencode({'title': request.query_params.get('title', '')[:200]})}",
+        status_code=307,
+    )
+
+def _is_youtube_stream_url(url: str) -> bool:
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        hostname = (parsed.hostname or "").lower()
+        return (
+            parsed.scheme == "https"
+            and (hostname == "googlevideo.com" or hostname.endswith(".googlevideo.com"))
+            and parsed.port in (None, 443)
+            and parsed.username is None
+            and parsed.password is None
+            and parsed.path.startswith("/videoplayback/")
+        )
+    except ValueError:
+        return False
+
+
+class _YoutubeStreamRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        resolved_url = urllib.parse.urljoin(req.full_url, newurl)
+        if not _is_youtube_stream_url(resolved_url):
+            raise urllib.error.HTTPError(
+                resolved_url, code, "Untrusted video stream redirect", headers, fp
+            )
+        return super().redirect_request(req, fp, code, msg, headers, resolved_url)
+
+
+def _youtube_segment_proxy_url(upstream_url: str) -> str:
+    if not _is_youtube_stream_url(upstream_url):
+        raise ValueError("The video stream contains an unsupported URL.")
+    return f"/api/youtube/segment?url={quote(upstream_url, safe='')}"
+
+
+def _fetch_youtube_hls_manifest(video_id: str) -> str:
+    source_url = f"https://www.youtube.com/watch?v={video_id}"
+    api_url = "https://apiyt-ca9e83c98352.herokuapp.com/api/watch?" + urllib.parse.urlencode({
+        "url": source_url,
+        "quality": "720p",
+    })
+    request = urllib.request.Request(
+        api_url,
+        headers={"User-Agent": "Mozilla/5.0"},
+    )
+    with urllib.request.urlopen(request, timeout=20) as response:
+        manifest_bytes = response.read(2 * 1024 * 1024 + 1)
+    if len(manifest_bytes) > 2 * 1024 * 1024:
+        raise ValueError("The video stream manifest is too large.")
+    manifest = manifest_bytes.decode("utf-8-sig")
+    if not manifest.startswith("#EXTM3U"):
+        raise ValueError("The video stream API returned an invalid manifest.")
+
+    rewritten_lines = []
+    for line in manifest.splitlines():
+        if line.startswith("https://"):
+            line = _youtube_segment_proxy_url(line)
+        else:
+            line = re.sub(
+                r'URI="([^"]+)"',
+                lambda match: f'URI="{_youtube_segment_proxy_url(match.group(1))}"',
+                line,
+            )
+        rewritten_lines.append(line)
+    return "\n".join(rewritten_lines) + "\n"
+
+
+def _open_youtube_stream_segment(upstream_url: str, range_header: str):
+    if not _is_youtube_stream_url(upstream_url):
+        raise HTTPException(status_code=400, detail="Invalid video stream URL.")
+    request = urllib.request.Request(
+        upstream_url,
+        headers={"User-Agent": "Mozilla/5.0"},
+    )
+    if range_header:
+        request.add_header("Range", range_header)
+    opener = urllib.request.build_opener(_YoutubeStreamRedirectHandler())
+    try:
+        return opener.open(request, timeout=30)
+    except urllib.error.HTTPError as error:
+        if error.code == 416:
+            raise HTTPException(
+                status_code=416,
+                headers={"Content-Range": error.headers.get("Content-Range", "bytes */*")},
+            ) from error
+        logging.warning("YouTube stream returned HTTP %s", error.code)
+        raise HTTPException(status_code=502, detail="The video stream is temporarily unavailable.") from error
+    except (urllib.error.URLError, OSError) as error:
+        logging.warning("YouTube stream request failed: %s", type(error).__name__)
+        raise HTTPException(status_code=502, detail="The video stream is temporarily unavailable.") from error
+
+
+@app.get("/api/youtube/stream/{video_id}.m3u8")
+async def youtube_hls_manifest(video_id: str):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
+        raise HTTPException(status_code=404, detail="Invalid YouTube video.")
+    try:
+        manifest = await asyncio.to_thread(_fetch_youtube_hls_manifest, video_id)
+    except (urllib.error.HTTPError, urllib.error.URLError, OSError, UnicodeDecodeError, ValueError) as error:
+        logging.warning("YouTube stream manifest request failed: %s", type(error).__name__)
+        raise HTTPException(status_code=502, detail="The video stream is temporarily unavailable.") from error
+    return StreamingResponse(
+        iter([manifest]),
+        media_type="application/vnd.apple.mpegurl",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.get("/api/youtube/segment")
+async def youtube_hls_segment(request: Request, url: str):
+    if len(url) > 8192 or not _is_youtube_stream_url(url):
+        raise HTTPException(status_code=400, detail="Invalid video stream URL.")
+    range_header = request.headers.get("Range", "")
+    if range_header and not re.fullmatch(r"bytes=\d*-\d*", range_header):
+        raise HTTPException(status_code=416, detail="Invalid video range.")
+    upstream = await asyncio.to_thread(_open_youtube_stream_segment, url, range_header)
+
+    def stream_body():
+        try:
+            while chunk := upstream.read(64 * 1024):
+                yield chunk
+        finally:
+            upstream.close()
+
+    headers = {"Cache-Control": "no-store", "Accept-Ranges": "bytes"}
+    for name in ("Content-Length", "Content-Range"):
+        value = upstream.headers.get(name)
+        if value:
+            headers[name] = value
+    return StreamingResponse(
+        stream_body(),
+        status_code=upstream.status,
+        media_type=upstream.headers.get_content_type(),
+        headers=headers,
     )
 
 @app.get("/health")

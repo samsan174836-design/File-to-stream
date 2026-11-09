@@ -1312,7 +1312,7 @@
         function youtubeMediaUrl(item) {
             return item.type === "playlist"
                 ? `https://www.yout-ube.com/playlist?list=${encodeURIComponent(item.id)}`
-                : `/youtube/${encodeURIComponent(item.id)}?title=${encodeURIComponent(item.title || "")}`;
+                : `/yt/${encodeURIComponent(item.id)}?title=${encodeURIComponent(item.title || "")}`;
         }
         function formatYoutubeViews(value) {
             const count = Number(value);
