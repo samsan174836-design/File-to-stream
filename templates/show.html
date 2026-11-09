@@ -3040,6 +3040,23 @@
                 transition-duration: .01ms !important;
             }
         }
+        /* Auto-hide: must stay last so it wins over every earlier control style. */
+        .player-card .custom-controls,
+        .player-card .player-overlay-top,
+        .player-card .big-play {
+            transition: opacity .3s ease, visibility .3s ease;
+        }
+        .player-card.controls-hidden .custom-controls,
+        .player-card.controls-hidden .player-overlay-top,
+        .player-card.controls-hidden .big-play,
+        .player-card.controls-hidden:hover .custom-controls,
+        .player-card.controls-hidden:focus-within .custom-controls,
+        .player-card.controls-hidden:fullscreen .custom-controls,
+        .player-card.controls-hidden:-webkit-full-screen .custom-controls {
+            opacity: 0 !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
+        }
     </style>
     <link rel="stylesheet" href="/static/aurora.css?v=4">
 </head>
@@ -3379,7 +3396,7 @@
                  // Music mode still works for the current page if storage is unavailable.
              }
              updateMusicModeUi();
-             revealPlayerControls(1800);
+             revealPlayerControls(4000);
          }
 
          function enableSoundAfterInteraction() {
@@ -3708,12 +3725,9 @@
                 ? formatTime(current)
                 : `${formatTime(current)} / ${formatTime(duration)}`;
             const playing = !activeMedia.paused && !activeMedia.ended;
-            if (!playing) {
+            if (activeMedia.ended) {
                 clearControlsHideTimer();
                 playerCard.classList.remove("controls-hidden");
-                if (activeMedia.paused && !activeMedia.ended) {
-                    revealPlayerControls(3000);
-                }
             }
             setControlIcon(playToggle, playing ? "pause" : "play");
             setControlIcon(bigPlay, playing ? "pause" : "play");
@@ -4034,7 +4048,7 @@
                 }
             }
             updateStreamModeUi();
-            revealPlayerControls(1000);
+            revealPlayerControls(4000);
         }
 
          function keepBackgroundPlayback() {
@@ -4159,7 +4173,7 @@
             }
         }
 
-        function revealPlayerControls(hideDelay = 3000) {
+        function revealPlayerControls(hideDelay = 4000) {
             playerCard.classList.remove("controls-hidden");
             clearControlsHideTimer();
             if (activeMedia && !activeMedia.ended) {
@@ -4170,6 +4184,28 @@
                 }, hideDelay);
             }
         }
+
+        function hidePlayerControls() {
+            clearControlsHideTimer();
+            if (activeMedia && !activeMedia.ended) {
+                playerCard.classList.add("controls-hidden");
+            }
+        }
+
+        function togglePlayerControls() {
+            if (playerCard.classList.contains("controls-hidden")) {
+                revealPlayerControls(4000);
+            } else {
+                hidePlayerControls();
+            }
+        }
+
+        document.addEventListener("pause", (event) => {
+            if (event.target === activeMedia) revealPlayerControls(4000);
+        }, true);
+        document.addEventListener("play", (event) => {
+            if (event.target === activeMedia) revealPlayerControls(4000);
+        }, true);
 
         function setupPlayer(media) {
             activeMedia = media;
@@ -4311,9 +4347,16 @@
             if (wasQuickPress && activeMedia) startPlayback();
         });
         window.addEventListener("blur", endSpaceHold);
-        ["mousemove", "mousedown", "touchstart"].forEach((eventName) => {
-            playerCard.addEventListener(eventName, () => revealPlayerControls(), { passive: true });
-        });
+        let lastMouseX = -1;
+        let lastMouseY = -1;
+        playerCard.addEventListener("mousemove", (event) => {
+            if (Date.now() < suppressTouchClickUntil) return;
+            if (event.clientX === lastMouseX && event.clientY === lastMouseY) return;
+            lastMouseX = event.clientX;
+            lastMouseY = event.clientY;
+            revealPlayerControls(4000);
+        }, { passive: true });
+        customControls.addEventListener("pointerdown", () => revealPlayerControls(4000), { passive: true });
         playerCard.addEventListener("touchend", (event) => {
             const target = event.target;
             if (target.closest("button, input, a, .custom-controls, .completion-state")) return;
@@ -4323,14 +4366,15 @@
             const bounds = playerCard.getBoundingClientRect();
             const isDoubleTap = now - lastTouchTapAt < 420
                 && Math.abs(touch.clientX - lastTouchTapX) < Math.max(70, bounds.width * .16);
-            suppressTouchClickUntil = now + 500;
-            revealPlayerControls(1000);
+            suppressTouchClickUntil = now + 700;
             if (isDoubleTap) {
                 event.preventDefault();
                 toggleFullscreen();
+                revealPlayerControls(4000);
                 lastTouchTapAt = 0;
                 return;
             }
+            togglePlayerControls();
             lastTouchTapAt = now;
             lastTouchTapX = touch.clientX;
         }, { passive: false });
@@ -4338,7 +4382,7 @@
             if (!activeMedia) return;
             if (Date.now() < suppressTouchClickUntil) return;
             if (event.target.closest("button, input, a, .custom-controls, .player-overlay-top, .completion-state")) return;
-            revealPlayerControls(1000);
+            togglePlayerControls();
         });
         playerCard.addEventListener("dblclick", (event) => {
             if (!activeMedia
@@ -4346,7 +4390,7 @@
                 || Date.now() < suppressTouchClickUntil) return;
             event.preventDefault();
             toggleFullscreen();
-            revealPlayerControls(1000);
+            revealPlayerControls(4000);
         });
         progressBar.oninput = () => {
             isProgressSeeking = true;
