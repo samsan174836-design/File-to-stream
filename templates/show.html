@@ -4604,9 +4604,11 @@
                 let previewStarted = false;
                 let upgradedPlaybackStarted = false;
                 let previewMediaId = "";
+                let attachedMediaId = "";
                 let previewQuality = 360;
                 let sourceErrorHandler = null;
                 const attachSource = (mediaId, switchQuality = false, shouldPlay = false) => {
+                    attachedMediaId = mediaId;
                     const resumeAt = switchQuality && Number.isFinite(video.currentTime)
                         ? video.currentTime
                         : resumeTime;
@@ -4696,6 +4698,18 @@
                         previewStarted = true;
                         upgradedPlaybackStarted = Boolean(source.upgrade_stream_ready);
                     }
+                    const sourceQuality = Number(source.actual_quality || source.preview_quality || 0);
+                    if (
+                        previewStarted &&
+                        source.media_id &&
+                        (
+                            source.media_id !== attachedMediaId ||
+                            (!upgradedPlaybackStarted && sourceQuality > previewQuality)
+                        )
+                    ) {
+                        attachSource(source.media_id, true, resumePlayback || autoplay);
+                        upgradedPlaybackStarted = true;
+                    }
                     if (source.upgrade_stream_ready && previewStarted && !upgradedPlaybackStarted) {
                         if (!source.media_id) {
                             throw new Error("The API reported an upgraded stream without a video source.");
@@ -4724,7 +4738,9 @@
                         ? "Higher-quality video ready..."
                         : "Video ready. Starting playback...";
                 }
-                if (source.upgrade_error || (previewStarted && !upgradedPlaybackStarted)) {
+                if (source.media_id && source.media_id !== attachedMediaId) {
+                    attachSource(source.media_id, true, resumePlayback || autoplay);
+                } else if (source.upgrade_error || (previewStarted && !upgradedPlaybackStarted)) {
                     attachSource(source.media_id, true, resumePlayback || autoplay);
                 } else if (!previewStarted) {
                     attachSource(source.media_id, false, resumePlayback || autoplay);
