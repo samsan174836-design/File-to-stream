@@ -4599,6 +4599,9 @@
                 let source;
                 let previewStarted = false;
                 let upgradedPlaybackStarted = false;
+                let previewMediaId = "";
+                let previewQuality = 360;
+                let sourceErrorHandler = null;
                 const attachSource = (mediaId, switchQuality = false, shouldPlay = false) => {
                     const resumeAt = switchQuality && Number.isFinite(video.currentTime)
                         ? video.currentTime
@@ -4606,10 +4609,18 @@
                     const continuePlayback = switchQuality
                         ? !video.paused && !video.ended
                         : shouldPlay;
+                    const playImmediately = !switchQuality && shouldPlay;
+                    if (switchQuality && Number.isFinite(video.currentTime)) {
+                        resumeTime = video.currentTime;
+                    }
                     if (switchQuality) {
                         loader.textContent = "Switching video quality...";
                         loader.className = "player-loading";
                         loader.hidden = false;
+                    }
+                    if (sourceErrorHandler) {
+                        video.removeEventListener("error", sourceErrorHandler);
+                        sourceErrorHandler = null;
                     }
                     if (youtubeRestoreHandler) {
                         video.removeEventListener("loadedmetadata", youtubeRestoreHandler);
@@ -4620,6 +4631,7 @@
                             video.currentTime = Math.min(resumeAt, video.duration);
                         }
                         if (continuePlayback) {
+                            if (playImmediately) return;
                             video.play().catch(() => {
                                 loader.textContent = "Press play to start the video.";
                                 loader.hidden = false;
@@ -4630,10 +4642,33 @@
                         }
                     };
                     video.addEventListener("loadedmetadata", youtubeRestoreHandler, { once: true });
+                    sourceErrorHandler = () => {
+                        sourceErrorHandler = null;
+                        if (requestId !== youtubeSourceRequest) return;
+                        if (switchQuality && previewMediaId) {
+                            youtubeQualitySelect.value = `${previewQuality}p`;
+                            loader.textContent = `Higher quality unavailable; continuing with ${previewQuality}p preview.`;
+                            loader.className = "player-loading";
+                            loader.hidden = false;
+                            attachSource(previewMediaId, false, continuePlayback);
+                            return;
+                        }
+                        loader.className = "error";
+                        loader.textContent = "This video stream could not be loaded.";
+                        loader.hidden = false;
+                        bigPlay.hidden = true;
+                    };
+                    video.addEventListener("error", sourceErrorHandler, { once: true });
                     const query = new URLSearchParams({ quality, media_id: mediaId });
                     if (switchQuality) query.set("quality_switch", Date.now().toString());
                     video.src = `/api/youtube/file/${encodeURIComponent(youtubeVideoId)}?${query}`;
                     video.load();
+                    if (playImmediately) {
+                        video.play().catch(() => {
+                            loader.textContent = "Press play to start the video.";
+                            loader.hidden = false;
+                        });
+                    }
                 };
 
                 while (true) {
@@ -4651,6 +4686,8 @@
                         throw new Error("The video API returned an invalid preparation status.");
                     }
                     if (source.media_id && !previewStarted) {
+                        previewMediaId = source.media_id;
+                        previewQuality = source.actual_quality || source.preview_quality || 360;
                         attachSource(source.media_id, false, resumePlayback || autoplay);
                         previewStarted = true;
                         upgradedPlaybackStarted = Boolean(source.upgrade_stream_ready);
