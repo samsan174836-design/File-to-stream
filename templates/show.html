@@ -3318,8 +3318,9 @@
         let lastSharedStateSave = 0;
         let lastPlaybackProgressSave = 0;
         let serverPlaybackPosition = 0;
-        let lastTouchTapAt = 0;
-        let lastTouchTapX = 0;
+        let lastPlayerTapAt = 0;
+        let lastPlayerTapRegion = "";
+        let playerTapTimer = null;
         let suppressTouchClickUntil = 0;
         let streamingMode = "fast";
         let liveEdgeStartedAt = 0;
@@ -4406,40 +4407,60 @@
             revealPlayerControls(4000);
         }, { passive: true });
         customControls.addEventListener("pointerdown", () => revealPlayerControls(4000), { passive: true });
+        function getPlayerTapRegion(clientX) {
+            const bounds = playerCard.getBoundingClientRect();
+            const position = clientX - bounds.left;
+            if (position < bounds.width / 3) return "left";
+            if (position > bounds.width * 2 / 3) return "right";
+            return "center";
+        }
+        function handlePlayerTap(clientX) {
+            const now = Date.now();
+            const region = getPlayerTapRegion(clientX);
+            if (playerTapTimer !== null) {
+                clearTimeout(playerTapTimer);
+                playerTapTimer = null;
+                if (now - lastPlayerTapAt < 420) {
+                    if (region === "left") seekBy(-10);
+                    else if (region === "right") seekBy(10);
+                    else void toggleFullscreen();
+                    revealPlayerControls(4000);
+                    return;
+                }
+                if (lastPlayerTapRegion === "center") startPlayback();
+                else togglePlayerControls();
+            }
+
+            lastPlayerTapAt = now;
+            lastPlayerTapRegion = region;
+            playerTapTimer = window.setTimeout(() => {
+                playerTapTimer = null;
+                if (lastPlayerTapRegion === "center") startPlayback();
+                else togglePlayerControls();
+                revealPlayerControls(4000);
+            }, 420);
+        }
         playerCard.addEventListener("touchend", (event) => {
             const target = event.target;
             if (target.closest("button, input, a, .custom-controls, .completion-state")) return;
             const touch = event.changedTouches[0];
             if (!touch) return;
             const now = Date.now();
-            const bounds = playerCard.getBoundingClientRect();
-            const isDoubleTap = now - lastTouchTapAt < 420
-                && Math.abs(touch.clientX - lastTouchTapX) < Math.max(70, bounds.width * .16);
             suppressTouchClickUntil = now + 700;
-            if (isDoubleTap) {
-                event.preventDefault();
-                toggleFullscreen();
-                revealPlayerControls(4000);
-                lastTouchTapAt = 0;
-                return;
-            }
-            togglePlayerControls();
-            lastTouchTapAt = now;
-            lastTouchTapX = touch.clientX;
+            event.preventDefault();
+            handlePlayerTap(touch.clientX);
         }, { passive: false });
         playerCard.addEventListener("click", (event) => {
             if (!activeMedia) return;
             if (Date.now() < suppressTouchClickUntil) return;
             if (event.target.closest("button, input, a, .custom-controls, .player-overlay-top, .completion-state")) return;
-            togglePlayerControls();
+            handlePlayerTap(event.clientX);
         });
         playerCard.addEventListener("dblclick", (event) => {
             if (!activeMedia
                 || event.target.closest("button, input, a, .custom-controls, .player-overlay-top, .completion-state")
                 || Date.now() < suppressTouchClickUntil) return;
             event.preventDefault();
-            toggleFullscreen();
-            revealPlayerControls(4000);
         });
         progressBar.oninput = () => {
             isProgressSeeking = true;

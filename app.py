@@ -1110,17 +1110,12 @@ async def youtube_playlist_page(playlist_id: str):
     )
 
 @app.get("/yt/{video_id}")
-async def youtube_video_page(request: Request, video_id: str):
+async def youtube_video_page(video_id: str):
     if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
         raise HTTPException(status_code=404, detail="Invalid YouTube video.")
-    title = request.query_params.get("title", "").strip()[:200] or "YouTube video"
-    return render_template(
-        request,
-        "show.html",
-        {
-            "youtube_video_id": video_id,
-            "youtube_video_title": title,
-        },
+    return RedirectResponse(
+        url=f"https://www.yout-ube.com/watch?v={quote(video_id)}",
+        status_code=307,
     )
 
 @app.get("/youtube/{video_id}", response_class=HTMLResponse)
